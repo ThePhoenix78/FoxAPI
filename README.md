@@ -46,7 +46,7 @@ class FoxAPI(image_dir: str = None, safe_mode: bool = True)
 
 #### Note : all of theses methods are async, to run the synchronous version, add _sync at the end (see API example)
 
-- **get_data(endpoint: str, etag: str = None, cache: bool = False) -> APIResponse**  
+- **get_data(endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse**  
   Fetches data from the specified endpoint, you can choose to use cache instead of sending a request and you can pass ETag.
 
   - Parameters:
@@ -58,22 +58,22 @@ class FoxAPI(image_dir: str = None, safe_mode: bool = True)
 
 ### Map and War Data
 
-- **get_maps(cache: bool = True) -> list**  
+- **get_maps(use_cache: bool = True) -> list**  
   Retrieves a list of available hexagons (maps) in the game world.
 
-- **get_war(cache: bool = False) -> dict**  
+- **get_war(use_cache: bool = False) -> dict**  
   Retrieves the current war state (war data).
 
-- **get_static(hexagon: str, cache: bool = False) -> dict**  
+- **get_static(hexagon: str, use_cache: bool = False) -> dict**  
   Retrieves the static data for the specified hexagon.
 
-- **get_dynamic(hexagon: str, cache: bool = False) -> dict**  
+- **get_dynamic(hexagon: str, use_cache: bool = False) -> dict**  
   Retrieves the dynamic data for the specified hexagon.
 
-- **get_war_report(hexagon: str, cache: bool = False) -> dict**  
+- **get_war_report(hexagon: str, use_cache: bool = False) -> dict**  
   Retrieves the war report for the specified hexagon.
 
-- **get_hexagon_data(hexagon: str, cache: bool = False) -> HexagonObject**
+- **get_hexagon_data(hexagon: str, use_cache: bool = False) -> HexagonObject**
     Retrieves all the data awailable for the specified hexagon.
 
 ### Hexagon Operations
@@ -112,12 +112,12 @@ class FoxAPI(image_dir: str = None, safe_mode: bool = True)
 
 ```python
 class APIResponse:
-    def __init__(self, headers: dict, json: dict, status_code: int, hexagon: str, is_cache: bool):
+    def __init__(self, headers: dict, json: dict, status_code: int, hexagon: str, is_use_cache: bool):
         self.headers: dict = headers
         self.json: dict = json
         self.status_code: int = status_code
         self.hexagon: str = hexagon
-        self.is_cache: bool = is_cache
+        self.is_use_cache: bool = is_cache
 
 
 class HexagonObject:
