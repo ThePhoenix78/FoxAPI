@@ -9,6 +9,7 @@ import threading
 import requests
 import aiohttp
 import asyncio
+import pathlib
 import math
 import time
 import os
@@ -20,12 +21,12 @@ import os
 
 
 class FoxAPI():
-    def __init__(self, safe_mode: bool = True, image_dir: str = "."):
+    def __init__(self, safe_mode: bool = True, image_dir: str = None):
         self.base_api: str = "https://war-service-live.foxholeservices.com/api/worldconquest"
         self.session: requests.Session = requests.Session()
 
         if image_dir is not None:
-            self._img_dir: str = os.path.join(image_dir, "Images")
+            self._img_dir: str = pathlib.Path(image_dir)
         else:
             self._img_dir: str = os.path.join(Path(__file__).parent, "Images")
 
