@@ -1,5 +1,12 @@
 # FoxAPI Documentation
 
+#### If you use the PyPi version, you might need to download manually the `Images` folder here and pass it as an argument like `fox = FoxAPI(image_dir="Images")`
+
+```bash
+pip install foxapi
+```
+
+
 `FoxAPI` is a wrapper for the Official Foxhole API. It provides methods to interact with various endpoints related to maps, war data, dynamic/static map states, and more. The client supports data caching and etags natively to avoid overloading the Foxhole servers.
 
 If you are new to the developer world (or lazy like me), it's the perfect tool!
