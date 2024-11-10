@@ -21,7 +21,7 @@ import os
 
 
 class FoxAPI():
-    def __init__(self, safe_mode: bool = True, image_dir: str = None):
+    def __init__(self, image_dir: str = None, safe_mode: bool = True):
         self.base_api: str = "https://war-service-live.foxholeservices.com/api/worldconquest"
         self.session: requests.Session = requests.Session()
 
