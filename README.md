@@ -132,11 +132,11 @@ from foxapi import FoxAPI
 # Initialize the API client in safe mode
 
 # if you are a developer and plane to use the exact hexagons name
-# you can turn the safe_mod off, otherwise it will convert
+# you can turn the safe_mode off, otherwise it will convert
 # api calls and hexagons name into valid ones
 # Ex: deadlands -> DeadLandsHex (Yes, I am *that* lazy)
 
-fox = FoxAPI(safe_mod=False)
+fox = FoxAPI()
 
 hexagon: str = "DeadLandsHex"
 
