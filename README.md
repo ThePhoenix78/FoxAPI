@@ -1,6 +1,6 @@
 # FoxAPI Documentation
 
-#### If you use the PyPi version, you might need to download manually the `Images` folder here and pass it as an argument like `fox = FoxAPI(image_dir="Images")`
+#### If you use the PyPi version, you might need to download manually the `Images` folder in the [github](https://github.com/ThePhoenix78/FoxAPI/tree/main/foxapi) and pass it as an argument like `fox = FoxAPI(image_dir="Images")`
 
 ## Installation
 ```bash
