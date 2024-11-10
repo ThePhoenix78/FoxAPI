@@ -17,13 +17,14 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 
 ## Table of Contents
 - [Dependencies](#dependencies)
+- [Wrapper](#wrapper)
 - [Methods](#methods)
   - [API Interaction](#api-interaction)
   - [Map and War Data](#map-and-war-data)
   - [Hexagon Operations](#hexagon-operations)
   - [Listener Functions](#listener-functions)
 - [Error Handling](#error-handling)
-- [Objects](#Objects)
+- [Objects](#objects)
 - [Example Usage](#example-usage)
 
 ## Dependencies
@@ -31,6 +32,13 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
    ```bash
    pip install pillow requests
    ```
+
+## Wrapper
+
+```python
+class FoxAPI(image_dir: str = None, safe_mode: bool = True)
+```
+
 
 ## Methods
 
@@ -82,7 +90,7 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 - **make_map_png(hexagon: str, dynamic: dict = None, static: dict = None) -> pillow.Image**
   Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
 
-- **calculate_death_rate(self, hexagon: str = None, war_report: dict = None): -> dict**  
+- **calculate_death_rate(hexagon: str = None, war_report: dict = None): -> dict**  
     calculate the death rate between the first launch and the current one
 
 ### Listener Functions
