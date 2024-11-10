@@ -46,15 +46,15 @@ class FoxAPI(image_dir: str = None, safe_mode: bool = True)
 
 #### Note : all of theses methods are async, to run the synchronous version, add _sync at the end (see API example)
 
-- **get_data(endpoint: str, etag: str = None, cache: bool = False) -> requests.Response**  
-  Fetches data from the specified endpoint with optional caching and ETag support.
+- **get_data(endpoint: str, etag: str = None, cache: bool = False) -> APIResponse**  
+  Fetches data from the specified endpoint, you can choose to use cache instead of sending a request and you can pass ETag.
 
   - Parameters:
     - `endpoint` (str): The API endpoint to call.
     - `etag` (str, optional): The ETag header for cache validation (not required since managed natively).
     - `cache` (bool, optional): Whether to use cached data (default: False).
 
-  - Returns: The response data from the API as a requests.Response object.
+  - Returns: The response data from the API as a APIResponse object.
 
 ### Map and War Data
 
