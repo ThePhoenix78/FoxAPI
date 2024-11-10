@@ -1,0 +1,2 @@
+requests
+pillow>=11.0.0
