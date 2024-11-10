@@ -20,11 +20,14 @@ import os
 
 
 class FoxAPI():
-    def __init__(self, safe_mode: bool = True):
+    def __init__(self, safe_mode: bool = True, image_dir: str = "."):
         self.base_api: str = "https://war-service-live.foxholeservices.com/api/worldconquest"
         self.session: requests.Session = requests.Session()
 
-        self._img_dir: str = os.path.join(Path(__file__).parent, "Images")
+        if image_dir is not None:
+            self._img_dir: str = os.path.join(image_dir, "Images")
+        else:
+            self._img_dir: str = os.path.join(Path(__file__).parent, "Images")
 
         self.cache: dict = {}
         self.etag: dict = {}
