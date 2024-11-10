@@ -33,11 +33,10 @@ class FoxAPI():
         self.cache: dict = {}
         self.etag: dict = {}
 
-        self._refresh: int = 30
-
         self._death_rate_w : dict = {}
         self._death_rate_c : dict = {}
 
+        self._refresh: int = 60
         self._cpt_rate_total: int = 3600 // self._refresh
         self._cpt_rate: int = 0
 
