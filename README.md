@@ -2,6 +2,7 @@
 
 #### If you use the PyPi version, you might need to download manually the `Images` folder here and pass it as an argument like `fox = FoxAPI(image_dir="Images")`
 
+## Installation
 ```bash
 pip install foxapi
 ```
