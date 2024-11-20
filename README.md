@@ -1,7 +1,5 @@
 # FoxAPI Documentation
 
-#### If you use the PyPi version, you might need to download manually the `Images` folder in the [github](https://github.com/ThePhoenix78/FoxAPI/tree/main/foxapi) and pass it as an argument like `fox = FoxAPI(image_dir="Images")`
-
 ## Installation
 ```bash
 pip install foxapi
@@ -19,7 +17,6 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 - [Dependencies](#dependencies)
 - [Wrapper](#wrapper)
 - [Methods](#methods)
-  - [API Interaction](#api-interaction)
   - [Map and War Data](#map-and-war-data)
   - [Hexagon Operations](#hexagon-operations)
   - [Listener Functions](#listener-functions)
@@ -78,10 +75,10 @@ class FoxAPI(shard: str = "", image_dir: str = None, safe_mode: bool = True)
 
 ### Hexagon Operations
 
-- **await calc_distance(x1: float, y1: float, x2: float, y2: float) -> float**  
+- **calc_distance(x1: float, y1: float, x2: float, y2: float) -> float**  
   Calculates the Euclidean distance between two points on the map.
 
-- **await get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict**
+- **get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict**
   Retrieves the captured towns for a given hexagon based on dynamic and static data.
 
 - **load_hexagon_map(hexagon: str) -> pillow.Image**  
@@ -144,13 +141,11 @@ from foxapi import FoxAPI
 # api calls and hexagons name into valid ones
 # Ex: deadlands -> DeadLandsHex (Yes, I am *that* lazy)
 
-# don't forget to download the image folder https://github.com/ThePhoenix78/FoxAPI/tree/main/foxapi
-
-fox = FoxAPI(shard="2", image_dir="Images")
+fox = FoxAPI(shard="1")
 
 hexagon: str = "DeadLandsHex"
 
-def retrieve():
+def function(hexagon: str):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = fox.get_maps_sync()
     war: dict = fox.get_war_sync()
@@ -170,7 +165,7 @@ def retrieve():
 
 # Async equivalent
 
-async def retrieve():
+async def function(hexagon: str):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = await fox.get_maps()
     war: dict = await fox.get_war()
