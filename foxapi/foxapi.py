@@ -21,8 +21,17 @@ import os
 
 
 class FoxAPI():
-    def __init__(self, image_dir: str = None, safe_mode: bool = True):
-        self.base_api: str = "https://war-service-live.foxholeservices.com/api/worldconquest"
+    def __init__(self, shard: str = "", image_dir: str = None, safe_mode: bool = True):
+        if shard in [1, "1"]:
+            shard: str = ""
+
+        elif shard in [2, "2", "-2"]:
+            shard: str = "-2"
+
+        elif shard in [3, "3", "-3"]:
+            shard: str = "-3"
+
+        self.base_api: str = f"https://war-service-live{shard}.foxholeservices.com/api/worldconquest"
         self.session: requests.Session = requests.Session()
 
         if image_dir is not None:
