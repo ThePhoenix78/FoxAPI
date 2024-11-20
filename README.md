@@ -36,7 +36,7 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 ## Wrapper
 
 ```python
-class FoxAPI(image_dir: str = None, safe_mode: bool = True)
+class FoxAPI(shard: str = "", image_dir: str = None, safe_mode: bool = True)
 ```
 
 
@@ -144,7 +144,9 @@ from foxapi import FoxAPI
 # api calls and hexagons name into valid ones
 # Ex: deadlands -> DeadLandsHex (Yes, I am *that* lazy)
 
-fox = FoxAPI()
+# don't forget to download the image folder https://github.com/ThePhoenix78/FoxAPI/tree/main/foxapi
+
+fox = FoxAPI(shard="2", image_dir="Images")
 
 hexagon: str = "DeadLandsHex"
 
