@@ -22,7 +22,7 @@ import os
 
 class FoxAPI():
     def __init__(self, shard: str = "", image_dir: str = None, safe_mode: bool = True):
-        if shard in [1, "1"]:
+        if shard in [1, "1", "-1"]:
             shard: str = ""
 
         elif shard in [2, "2", "-2"]:
@@ -452,7 +452,7 @@ class FoxAPI():
     CRAWLER ASYNC
     """
 
-    async def _litsener(self):
+    async def _listener(self):
         await asyncio.sleep(.1)
 
         while self._run:
@@ -475,7 +475,7 @@ class FoxAPI():
     CRAWLER SYNC
     """
 
-    def _litsener_sync(self):
+    def _listener_sync(self):
         time.sleep(.1)
 
         while self._run:
@@ -493,14 +493,14 @@ class FoxAPI():
             self._cpt_rate += 1
             time.sleep(self._refresh)
 
-    def _check_litsener(self, run_async: bool = True):
+    def _check_listener(self, run_async: bool = True):
         if not self._run:
             self._run: bool = True
-            # threading.Thread(target=self._litsener).start()
+            # threading.Thread(target=self._listener).start()
             if run_async:
-                self.start_async_thread(self._litsener())
+                self.start_async_thread(self._listener())
             else:
-                threading.Thread(target=self._litsener_sync).start()
+                threading.Thread(target=self._listener_sync).start()
             # threading.Thread(target=self.start_async_thread).start()
 
     """
@@ -577,7 +577,7 @@ class FoxAPI():
                 raise EndpointError(f"{endpoints[i]} not valid! Please enter a valid endpoint (FoxAPI._valid_endpoints)")
 
         def add_debug(func):
-            self._check_litsener(asyncio.iscoroutinefunction(func))
+            self._check_listener(asyncio.iscoroutinefunction(func))
 
             for endpoint in endpoints:
                 self._to_call[endpoint]: callable = func
@@ -589,7 +589,7 @@ class FoxAPI():
 
         return add_debug
 
-    def on_hexagon_update(self, callback: callable = "all", hexagons: list = None):
+    def on_hexagon_update(self, callback: callable = None, hexagons: list = "all"):
         if (isinstance(callback, str) or isinstance(callback, list)) and hexagons is None:
             hexagons: str = callback
             callback: callable = None
@@ -608,7 +608,7 @@ class FoxAPI():
                     raise HexagonError("Please enter a valid hexagon (FoxAPi.available_hexagons")
 
         def add_debug(func):
-            self._check_litsener(asyncio.iscoroutinefunction(func))
+            self._check_listener(asyncio.iscoroutinefunction(func))
 
             for hexagon in hexagons:
                 ends: list = [f"/warReport/{hexagon}", f"/maps/{hexagon}/dynamic/public", f"/maps/{hexagon}/static"]
