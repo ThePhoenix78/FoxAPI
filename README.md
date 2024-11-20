@@ -32,7 +32,7 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 
 ## Wrapper
 
-```python
+```py
 class FoxAPI(shard: str = "", image_dir: str = None, safe_mode: bool = True)
 ```
 
@@ -43,66 +43,99 @@ class FoxAPI(shard: str = "", image_dir: str = None, safe_mode: bool = True)
 
 #### Note : all of theses methods are async, to run the synchronous version, add _sync at the end (see API example)
 
-- **get_data(endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse**  
+```py
+get_data(endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse
+```  
   Fetches data from the specified endpoint, you can choose to use cache instead of sending a request and you can pass ETag.
 
   - Parameters:
     - `endpoint` (str): The API endpoint to call.
     - `etag` (str, optional): The ETag header for cache validation (not required since managed natively).
-    - `cache` (bool, optional): Whether to use cached data (default: False).
+    - `use_cache` (bool, optional): Whether to use cached data (default: False).
 
   - Returns: The response data from the API as a APIResponse object.
 
 ### Map and War Data
 
-- **get_maps(use_cache: bool = True) -> list**  
-  Retrieves a list of available hexagons (maps) in the game world.
+```py
+get_maps(use_cache: bool = True) -> list
+```
+ - Retrieves a list of available hexagons (maps) in the game world.
 
-- **get_war(use_cache: bool = False) -> dict**  
-  Retrieves the current war state (war data).
+```py
+get_war(use_cache: bool = False) -> dict
+```
+  - Retrieves the current war state (war data).
 
-- **get_static(hexagon: str, use_cache: bool = False) -> dict**  
-  Retrieves the static data for the specified hexagon.
+```py
+get_static(hexagon: str, use_cache: bool = False) -> dict
+```
 
-- **get_dynamic(hexagon: str, use_cache: bool = False) -> dict**  
-  Retrieves the dynamic data for the specified hexagon.
+  - Retrieves the static data for the specified hexagon.
 
-- **get_war_report(hexagon: str, use_cache: bool = False) -> dict**  
-  Retrieves the war report for the specified hexagon.
+```py
+get_dynamic(hexagon: str, use_cache: bool = False) -> dict
+```
+  - Retrieves the dynamic data for the specified hexagon.
 
-- **get_hexagon_data(hexagon: str, use_cache: bool = False) -> HexagonObject**
-    Retrieves all the data awailable for the specified hexagon.
+```py
+get_war_report(hexagon: str, use_cache: bool = False) -> dict
+```
+  - Retrieves the war report for the specified hexagon.
+
+```py
+get_hexagon_data(hexagon: str, use_cache: bool = False) -> HexagonObject
+```
+
+  - Retrieves all the data awailable for the specified hexagon.
 
 ### Hexagon Operations
 
-- **calc_distance(x1: float, y1: float, x2: float, y2: float) -> float**  
-  Calculates the Euclidean distance between two points on the map.
+```py
+calc_distance(x1: float, y1: float, x2: float, y2: float) -> float
+```
 
-- **get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict**
-  Retrieves the captured towns for a given hexagon based on dynamic and static data.
+  - Calculates the Euclidean distance between two points on the map.
 
-- **load_hexagon_map(hexagon: str) -> pillow.Image**  
-  Loads the PNG map for the specified hexagon.
+```py
+get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict
+```
+  - Retrieves the captured towns for a given hexagon based on dynamic and static data.
 
-- **make_map_png(hexagon: str, dynamic: dict = None, static: dict = None) -> pillow.Image**
-  Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
+```py
+load_hexagon_map(hexagon: str) -> pillow.Image
+```
 
-- **calculate_death_rate(hexagon: str = None, war_report: dict = None): -> dict**  
-    calculate the death rate between the first launch and the current one
+ - Loads the PNG map for the specified hexagon.
+
+```py
+make_map_png(hexagon: str, dynamic: dict = None, static: dict = None) -> pillow.Image
+```
+  - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
+
+
+```py
+calculate_death_rate(hexagon: str = None, war_report: dict = None): -> dict
+```
+  - calculate the death rate between the first launch and the current one
 
 ### Listener Functions
 
-- **on_api_update(callback: callable = None, endpoints: list = None)**  
-  Registers a callback function to be called when the data for specified API endpoints is updated.
+```py
+on_api_update(callback: callable = None, endpoints: list = None)
+```
+  - Registers a callback function to be called when the data for specified API endpoints is updated.
 
-- **on_hexagon_update(callback: callable = None, hexagons: list = None)**  
-  Registers a callback function to be called when the data for specified hexagons is updated.
+```py
+on_hexagon_update(callback: callable = None, hexagons: list = "all")
+```
+  - Registers a callback function to be called when the data for specified hexagons is updated.
 
 ## Error Handling
 
-- **EndpointError**: Raised if an invalid API endpoint is used.
-- **HexagonError**: Raised if an invalid hexagon is provided.
-- **FoxAPIError**: A general error for issues within the FoxAPI class (e.g., missing data).
+```pyEndpointError```: Raised if an invalid API endpoint is used.
+```pyHexagonError```: Raised if an invalid hexagon is provided.
+```pyFoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).
 
 
 ## Objects
@@ -114,7 +147,7 @@ class APIResponse:
         self.json: dict = json
         self.status_code: int = status_code
         self.hexagon: str = hexagon
-        self.is_use_cache: bool = is_cache
+        self.is_cache: bool = is_cache
 
 
 class HexagonObject:
@@ -143,9 +176,8 @@ from foxapi import FoxAPI
 
 fox = FoxAPI(shard="1")
 
-hexagon: str = "DeadLandsHex"
 
-def function(hexagon: str):
+def function(hexagon: str = "DeadLandsHex"):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = fox.get_maps_sync()
     war: dict = fox.get_war_sync()
@@ -165,7 +197,7 @@ def function(hexagon: str):
 
 # Async equivalent
 
-async def function(hexagon: str):
+async def function(hexagon: str = "DeadLandsHex"):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = await fox.get_maps()
     war: dict = await fox.get_war()
@@ -201,6 +233,5 @@ async def on_update(hexa: HexagonObject):
     hexa.image.save(f"{hexa.hexagon}.png")
 
 ```
- (Yes, most of this documentation has been generated with ChatGPT, I am alone and too lazy to do that)
 
  #### I am not responsible for what you are doing with it
