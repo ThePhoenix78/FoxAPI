@@ -219,7 +219,7 @@ async def function(hexagon: str = "DeadLandsHex"):
 # Register a callback to listen for updates on all the hexagons
 # it will run forever don't worry
 
-@on_hexagon_update("all")
+@fox.on_hexagon_update("all")
 def on_update(hexa: HexagonObject):
     print(f"Hexagon {hexa.hexagon} has been updated")
     hexa.image.save(f"{hexa.hexagon}.png")
@@ -227,7 +227,7 @@ def on_update(hexa: HexagonObject):
 
 # The following async code works as well
 
-@on_hexagon_update("all")
+@fox.on_hexagon_update("all")
 async def on_update(hexa: HexagonObject):
     print(f"Hexagon {hexa.hexagon} has been updated")
     hexa.image.save(f"{hexa.hexagon}.png")
