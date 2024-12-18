@@ -133,9 +133,9 @@ on_hexagon_update(callback: callable = None, hexagons: list = "all")
 
 ## Error Handling
 
-```EndpointError```: Raised if an invalid API endpoint is used.
-```HexagonError```: Raised if an invalid hexagon is provided.
-```FoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).
+```EndpointError```: Raised if an invalid API endpoint is used.   
+```HexagonError```: Raised if an invalid hexagon is provided.   
+```FoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).   
 
 
 ## Objects
