@@ -206,9 +206,6 @@ class FoxAPI():
 
         img_path: str = os.path.join(self._img_dir, "MapsHex", f"Map{hexagon}.png")
 
-        if hexagon == 'DeadLandsHex':
-            img_path: str = os.path.join(self._img_dir, "MapsHex", "MapDeadlandsHex.png")
-
         return Image.open(img_path).convert("RGBA")
 
     """
