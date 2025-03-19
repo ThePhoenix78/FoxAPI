@@ -255,7 +255,7 @@ class FoxAPI():
             dynamic: dict = await self.get_dynamic(hexagon)
 
         if static is None or dynamic is None:
-            raise FoxAPIError("Please pass the required parameters (static and dynamic or hexagon)")
+            raise FoxAPIError("Please pass the required parameters (hexagon or (static and dynamic))")
 
         captured_towns: dict = {}
         icons: list = [45, 46, 47, 56, 57, 58] # Town halls and relics
@@ -542,6 +542,7 @@ class FoxAPI():
         tasks.clear()
         self.waiting_list.clear()
         self.waiting_list: list = []
+        
         return answers
 
     def run_task_sync(self, thread: bool = False):
