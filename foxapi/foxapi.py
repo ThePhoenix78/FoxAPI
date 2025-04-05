@@ -128,9 +128,8 @@ class FoxAPI():
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
                     self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
-
+                    data_json = await data.json()
                     if data.status == 200:
-                        data_json = await data.json()
                         self.cache[endpoint] = data_json
                         return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
 
@@ -141,9 +140,8 @@ class FoxAPI():
         else:
             async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
                 self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
-
+                data_json = await data.json()
                 if data.status == 200:
-                    data_json = await data.json()
                     self.cache[endpoint] = data_json
                     return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
 
@@ -426,7 +424,7 @@ class FoxAPI():
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
         if war_report is None:
-            war_report: dict = self.get_war_report(hexagon)
+            war_report: dict = self.get_war_report_sync(hexagon)
 
         if war_report is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
