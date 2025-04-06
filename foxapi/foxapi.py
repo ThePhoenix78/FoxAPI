@@ -76,11 +76,11 @@ class FoxAPI():
     REQUESTS SYNC
     """
 
-    def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = False):
+    def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse:
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
 
         if use_cache == True:
-            cached_data = self.cache.get(endpoint)
+            cached_data: dict = self.cache.get(endpoint)
 
             if cached_data is not None:
                 return APIResponse(headers={}, json=cached_data, status_code=None, hexagon=hexagon, is_cache=True)
@@ -114,7 +114,7 @@ class FoxAPI():
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
 
         if use_cache == True:
-            cached_data = self.cache.get(endpoint)
+            cached_data: dict = self.cache.get(endpoint)
 
             if cached_data is not None:
                 return APIResponse(headers={}, json=cached_data, status_code=None, hexagon=hexagon, is_cache=True)
@@ -140,9 +140,10 @@ class FoxAPI():
         else:
             async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
                 self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
-                data_json = await data.json()
+                data_json: dict = await data.json()
+
                 if data.status == 200:
-                    self.cache[endpoint] = data_json
+                    self.cache[endpoint]: dict = data_json
                     return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
 
                 elif data.status == 304:
@@ -540,7 +541,7 @@ class FoxAPI():
         tasks.clear()
         self.waiting_list.clear()
         self.waiting_list: list = []
-        
+
         return answers
 
     def run_task_sync(self, thread: bool = False):
