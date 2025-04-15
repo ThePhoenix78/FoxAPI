@@ -20,6 +20,7 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
   - [Map and War Data](#map-and-war-data)
   - [Hexagon Operations](#hexagon-operations)
   - [Listener Functions](#listener-functions)
+  - [Queue Tasks](#queue-tasks)
 - [Error Handling](#error-handling)
 - [Objects](#objects)
 - [Example Usage](#example-usage)
@@ -131,16 +132,60 @@ on_hexagon_update(callback: callable = None, hexagons: list = "all")
 ```
   - Registers a callback function to be called when the data for specified hexagons is updated.
 
+
+### Queue Tasks
+
+This library also give the possibility to queue up some sync and async methods to run them simultaneously
+
+```py
+from foxapi import FoxAPI
+
+api = FoxAPI()
+
+for i in range(10):
+    api.add_task(function=api.get_war) # or any other method
+
+data = api.run_task_sync()
+
+for elem in data:
+    print(elem.result)
+```
+
+```py
+from foxapi import FoxAPI
+import asyncio
+
+api = FoxAPI()
+
+async def main():
+    for i in range(10):
+        api.add_task(function=api.get_war) # or any other method
+
+    data = await api.run_task()
+
+    for elem in data:
+        print(elem.result)
+
+asyncio.run(main())
+```
+
 ## Error Handling
 
-```EndpointError```: Raised if an invalid API endpoint is used.   
-```HexagonError```: Raised if an invalid hexagon is provided.   
-```FoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).   
+```pyEndpointError```: Raised if an invalid API endpoint is used.
+```pyHexagonError```: Raised if an invalid hexagon is provided.
+```pyFoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).
 
 
 ## Objects
 
 ```python
+class Task:
+    def __init__(self, function: callable, args: any = "no_args", result: any = None):
+        self.function: callable = function
+        self.args: any = args
+        self.result: any = result
+
+
 class APIResponse:
     def __init__(self, headers: dict, json: dict, status_code: int, hexagon: str, is_use_cache: bool):
         self.headers: dict = headers
