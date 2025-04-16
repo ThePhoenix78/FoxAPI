@@ -68,6 +68,13 @@ class FoxAPIError(Exception):
     pass
 
 
+class Task:
+    def __init__(self, function: callable, args: any = "no_args", result: any = None):
+        self.function: callable = function
+        self.args: any = args
+        self.result: any = result
+
+
 class APIResponse:
     def __init__(self, headers: dict, json: dict, status_code: int, hexagon: str, is_cache: bool):
         self.headers: dict = headers

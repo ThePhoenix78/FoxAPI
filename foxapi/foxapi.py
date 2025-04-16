@@ -1,7 +1,7 @@
 try:
-    from .utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse
+    from .utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task
 except ImportError:
-    from utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse
+    from utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task
 
 from pathlib import Path
 from PIL import Image
@@ -515,7 +515,7 @@ class FoxAPI():
     """
     ASYNC TOOLS
     """
-    def add_task(self, function: callable, args: list = "no_args"):
+    def add_task(self, function: callable, args: any = "no_args"):
         self.waiting_list.append([function, args])
 
     async def run_task(self):
@@ -536,7 +536,7 @@ class FoxAPI():
                 tasks.append([asyncio.create_task(function(args)), function, args])
 
         for task, function, args in tasks:
-            answers.append({"result": await task, "function": function, "args": args})
+            answers.append(Task(function=function, args=args, result=await task))
 
         tasks.clear()
         self.waiting_list.clear()
