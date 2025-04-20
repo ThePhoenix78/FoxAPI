@@ -93,3 +93,49 @@ class HexagonObject:
         self.captured_towns: dict = captured_towns
         self.casualty_rate: dict = casualty_rate
         self.image = image
+
+
+class FoxObject:
+    """
+    Universal wrapper for any kind of dict item
+    if the data structure change I won't have to do
+    massive change in the code
+    """
+    def __init__(self, dico: dict):
+        for k, v in dico.items():
+            if not isinstance(v, dict):
+                setattr(self, k, v)
+            else:
+                setattr(self, k, FoxObject(v))
+
+    def __repr__(self):
+        return str({k: v for k, v in self.__dict__.items()})
+
+    def __getitem__(self, x: str | int):
+        if isinstance(x, str):
+            return getattr(self, x)
+
+    def __setitem__(self, k, v):
+        setattr(self, k, v)
+
+    def items(self):
+        return self.__dict__.items()
+
+
+class APIObject:
+    def __init__(self, api_response: APIResponse):
+        self.response: APIResponse = api_response
+        self.json: FoxObject = FoxObject(api_response.json)
+
+    def __repr__(self):
+        return str({k: v for k, v in self.json.__dict__.items()})
+
+    def __getitem__(self, x: str | int):
+        if isinstance(x, str):
+            return getattr(self.json, x)
+
+    def __setitem__(self, k, v):
+        setattr(self.json, k, v)
+
+    def items(self):
+        return self.json.__dict__.items()

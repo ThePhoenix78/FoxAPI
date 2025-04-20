@@ -216,32 +216,32 @@ class FoxAPI():
     """
 
     async def get_maps(self, use_cache: bool = True):
-        data = await self.get_data(endpoint="/maps", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache)
         return data.json
 
     async def get_war(self, use_cache: bool = False):
-        data = await self.get_data(endpoint="/war", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache)
         return data.json
 
     async def get_static(self, hexagon: str, use_cache: bool = False):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache)
         return data.json
 
     async def get_dynamic(self, hexagon: str, use_cache: bool = False):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache)
         return data.json
 
     async def get_war_report(self, hexagon: str, use_cache: bool = False):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data = await self.get_data(endpoint=f"/warReport/{hexagon}", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/warReport/{hexagon}", use_cache=use_cache)
         return data.json
 
     """
@@ -553,12 +553,43 @@ class FoxAPI():
     def _exec(self):
         return asyncio.run(self.run_task())
 
+    # https://gist.github.com/ultrafunkamsterdam/8be3d55ac45759aa1bd843ab64ce876d#file-python-3-6-asyncio-multiple-async-event-loops-in-multiple-threads-running-and-shutting-down-gracefully-py-L15
+    def create_bg_loop(self):
+        def to_bg(loop):
+            asyncio.set_event_loop(loop)
+
+            try:
+                loop.run_forever()
+
+            except asyncio.CancelledError as e:
+                print('CANCELLEDERROR {}'.format(e))
+
+            finally:
+                for task in asyncio.Task.all_tasks():
+                    task.cancel()
+
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                loop.stop()
+                loop.close()
+
+        new_loop = asyncio.new_event_loop()
+        t = threading.Thread(target=to_bg, args=(new_loop,))
+        t.start()
+
+        return new_loop
+
     def start_async_thread(self, awaitable):
+        # old
+        """
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         threading.Thread(target=loop.run_forever).start()
-        asyncio.run_coroutine_threadsafe(awaitable, loop)
-        return loop
+        """
+        # new
+        loop = self.create_bg_loop()
+
+        coro = asyncio.run_coroutine_threadsafe(awaitable, loop)
+        return loop, coro
 
     def stop_async_thread(self, loop):
         loop.call_soon_threadsafe(loop.stop)
