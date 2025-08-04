@@ -273,7 +273,6 @@ async def function(hexagon: str = "DeadLandsHex"):
 @fox.on_hexagon_update("all")
 def on_update(hexa: HexagonObject):
     print(f"Hexagon {hexa.hexagon} has been updated")
-    hexa.image.save(f"{hexa.hexagon}.png")
 
 
 # The following async code works as well
@@ -281,7 +280,6 @@ def on_update(hexa: HexagonObject):
 @fox.on_hexagon_update("all")
 async def on_update(hexa: HexagonObject):
     print(f"Hexagon {hexa.hexagon} has been updated")
-    hexa.image.save(f"{hexa.hexagon}.png")
 
 ```
 
