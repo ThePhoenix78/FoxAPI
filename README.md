@@ -14,16 +14,22 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 
 
 ## Table of Contents
-- [Dependencies](#dependencies)
-- [Wrapper](#wrapper)
-- [Methods](#methods)
-  - [Map and War Data](#map-and-war-data)
-  - [Hexagon Operations](#hexagon-operations)
-  - [Listener Functions](#listener-functions)
-  - [Queue Tasks](#queue-tasks)
-- [Error Handling](#error-handling)
-- [Objects](#objects)
-- [Example Usage](#example-usage)
+- [FoxAPI Documentation](#foxapi-documentation)
+  - [Installation](#installation)
+  - [Table of Contents](#table-of-contents)
+  - [Dependencies](#dependencies)
+  - [Wrapper](#wrapper)
+  - [Methods](#methods)
+    - [API Interaction (async)](#api-interaction-async)
+      - [Note : all of theses methods are async, to run the synchronous version, add \_sync at the end (see API example)](#note--all-of-theses-methods-are-async-to-run-the-synchronous-version-add-_sync-at-the-end-see-api-example)
+    - [Map and War Data](#map-and-war-data)
+    - [Hexagon Operations](#hexagon-operations)
+    - [Listener Functions](#listener-functions)
+    - [Queue Tasks](#queue-tasks)
+  - [Error Handling](#error-handling)
+  - [Objects](#objects)
+  - [Example Usage](#example-usage)
+      - [I am not responsible for what you are doing with it](#i-am-not-responsible-for-what-you-are-doing-with-it)
 
 ## Dependencies
 
@@ -110,10 +116,11 @@ load_hexagon_map(hexagon: str) -> pillow.Image
  - Loads the PNG map for the specified hexagon.
 
 ```py
-make_map_png(hexagon: str, dynamic: dict = None, static: dict = None) -> pillow.Image
+make_map_png(hexagon: str, colored: bool = False, show_icons: bool = True, dynamic: dict = None, static: dict = None) -> pillow.Image
 ```
   - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
-
+  - colored -> display each region in the team's color
+  - show_icons -> display every building in their team's color
 
 ```py
 calculate_death_rate(hexagon: str = None, war_report: dict = None): -> dict
@@ -196,14 +203,13 @@ class APIResponse:
 
 
 class HexagonObject:
-    def __init__(self, hexagon: str, war_report: dict, static: dict, dynamic: dict, captured_towns: dict, casualty_rate: dict, image: pillow.Image):
+    def __init__(self, hexagon: str, war_report: dict, static: dict, dynamic: dict, captured_towns: dict, casualty_rate: dict):
         self.hexagon: str = hexagon
         self.war_report: dict = war_report
         self.static: dict = static
         self.dynamic: dict = dynamic
         self.captured_towns: dict = captured_towns
         self.casualty_rate: dict = casualty_rate
-        self.image: pillow.Image = image
 ```
 
 
