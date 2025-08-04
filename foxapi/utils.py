@@ -53,7 +53,9 @@ _images_relations: dict = {
     "70": "RocketTarget",
     "71": "RocketGroundZero",
     "72": "RocketSiteWithRocket",
-    "75": "FacilityMineOilRig"
+    "75": "FacilityMineOilRig",
+    "83": "WeatherStation",
+    "84": "MortarHouse"
 }
 
 class EndpointError(Exception):
@@ -85,14 +87,13 @@ class APIResponse:
 
 
 class HexagonObject:
-    def __init__(self, hexagon: str, war_report: dict, static: dict, dynamic: dict, captured_towns: dict, casualty_rate: dict, image):
+    def __init__(self, hexagon: str, war_report: dict, static: dict, dynamic: dict, captured_towns: dict, casualty_rate: dict):
         self.hexagon: str = hexagon
         self.war_report: dict = war_report
         self.static: dict = static
         self.dynamic: dict = dynamic
         self.captured_towns: dict = captured_towns
         self.casualty_rate: dict = casualty_rate
-        self.image = image
 
 
 class FoxObject:

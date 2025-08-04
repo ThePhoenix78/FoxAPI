@@ -3,8 +3,8 @@ try:
 except ImportError:
     from utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task
 
-from pathlib import Path
 from PIL import Image
+from pathlib import Path
 import threading
 import requests
 import aiohttp
@@ -69,6 +69,9 @@ class FoxAPI():
 
         self._icon_size: tuple = (24, 24)
 
+        self.img_height: int = 888
+        self.img_width: int = 1024
+
     def close_session(self):
         self.session.close()
 
@@ -129,6 +132,7 @@ class FoxAPI():
                 async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
                     self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
                     data_json = await data.json()
+                    
                     if data.status == 200:
                         self.cache[endpoint] = data_json
                         return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
@@ -200,8 +204,20 @@ class FoxAPI():
 
         return endpoint
 
-    def calc_distance(self, x1: float, y1: float, x2: float, y2: float):
-        return math.sqrt((abs(x1 - x2) ** 2) + (abs(y1 - y2) ** 2))
+    def calc_distance(self, p1: tuple, p2: tuple):
+        return math.sqrt((abs(p1[0] - p2[0]) ** 2) + (abs(p1[1] - p2[1]) ** 2))
+
+    def bissectrice(self, p1: tuple, p2: tuple):
+        mx, my = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
+        
+        dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+        
+        if dx != 0:
+            slope = -dy / dx
+            intercept = my - slope * mx
+            return slope, intercept
+        else:
+            return None, mx
 
     def load_hexagon_map(self, hexagon: str):
         if self._safe_mode:
@@ -210,6 +226,69 @@ class FoxAPI():
         img_path: str = os.path.join(self._img_dir, "MapsHex", f"Map{hexagon}.png")
 
         return Image.open(img_path).convert("RGBA")
+
+    def change_color(self, image: Image, team: str = None) -> Image:
+        if team == "COLONIAL":
+            mycolor2: tuple = (101, 135, 94)
+        
+        elif team == "WARDEN":
+            mycolor2: tuple = (45, 108, 161)
+        
+        else:
+            return image
+
+        width, height = image.size
+        colortuples = image.getcolors()
+
+        mycolor1: tuple = min(colortuples)[1]
+
+
+        pix = image.load()
+
+        for x in range(0, width):
+            for y in range(0, height):
+                if pix[x, y] == mycolor1:
+                    image.putpixel((x, y), mycolor2)
+
+        return image
+
+    def color_regions(self, image: Image, dynamic: dict, static: dict) -> Image:
+        captured_towns: dict = self.get_captured_towns_sync(dynamic=dynamic, static=static)
+        map_info = [data for data in static["mapTextItems"] if data["mapMarkerType"] == "Major"]
+        
+        for i in range(len(map_info)):
+            map_info[i]["team"] = captured_towns[map_info[i]["text"]]
+
+        points = [(p["x"] * self.img_width, p["y"] * self.img_height, p["team"]) for p in map_info]
+
+        for y in range(self.img_height):
+            for x in range(self.img_width):
+                current_pixel = image.getpixel((x, y))
+                
+                if current_pixel[3] <= 10:
+                    continue
+
+                closest_point_index = None
+                min_distance = float('inf')
+                
+                for i, point in enumerate(points):
+                    distance = math.sqrt((x - point[0])**2 + (y - point[1])**2)
+                    
+                    if distance < min_distance:
+                        min_distance = distance
+                        closest_point_index = i
+
+                if points[closest_point_index][2] == "COLONIALS":
+                    color: tuple = (50, 66, 47)
+                
+                elif points[closest_point_index][2] == "WARDENS":
+                    color: tuple = (22, 54, 80)
+                
+                else:
+                    continue
+
+                new_color: tuple = (current_pixel[0]//2 + color[0], current_pixel[1]//2 + color[1], current_pixel[2]//2 + color[2])
+                image.putpixel((x, y), new_color)
 
     """
     ASYNC METHODS
@@ -267,15 +346,18 @@ class FoxAPI():
                 for d in dynamic['mapItems']:
                     if d['iconType'] in icons:
                         faction.append(d['teamId'])
-                        deltas.append(self.calc_distance(s['x'], s['y'], d['x'], d['y']))
+                        deltas.append(self.calc_distance((s['x'], s['y']), (d['x'], d['y'])))
 
                 captured_towns[s['text']]: str = faction[deltas.index(min(deltas))]
 
         return captured_towns
 
-    async def make_map_png(self, hexagon: str, dynamic: dict = None, static: dict = None):
+    async def make_map_png(self, hexagon: str, colored: bool = False, show_icons: bool = True, dynamic: dict = None, static: dict = None):
         if dynamic is None:
             dynamic: dict = await self.get_dynamic(hexagon)
+        
+        if static is None:
+            static: dict = await self.get_static(hexagon=hexagon, use_cache=True)
 
         if dynamic is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or dynamic (static is optional))")
@@ -283,21 +365,25 @@ class FoxAPI():
         img1 = self.load_hexagon_map(hexagon)
         icon_size: tuple = self._icon_size
 
-        for data in dynamic["mapItems"]:
-            image: str = data['iconType']
-            team: str = data["teamId"].strip()
+        if colored:
+            self.color_regions(image=img1, dynamic=dynamic, static=static)
 
-            try:
-                img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}{team}.png")
-                img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
-            except Exception:
+        if show_icons:
+            for data in dynamic["mapItems"]:
+                image: str = data['iconType']
+                team: str = data["teamId"].strip()
+
                 try:
-                    img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}.png")
+                    img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}{team}.png")
                     img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
                 except Exception:
-                    continue
+                    try:
+                        img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}.png")
+                        img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
+                    except Exception:
+                        continue
 
-            img1.paste(img2, (int(data["x"] * 1024), int(data["y"] * 888)), mask=img2)
+                img1.paste(img2, (int(data["x"] * self.img_width), int(data["y"] * self.img_height)), mask=img2)
 
         return img1
 
@@ -331,9 +417,7 @@ class FoxAPI():
 
         captured_towns: dict = await self.get_captured_towns(dynamic=dynamic, static=static)
         casualty_rate: dict = await self.calculate_death_rate(hexagon=hexagon, war_report=war_report)
-        image = await self.make_map_png(hexagon=hexagon, dynamic=dynamic, static=static)
-
-        return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate, image=image)
+        return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
     SYNC METHODS
@@ -386,37 +470,49 @@ class FoxAPI():
                 for d in dynamic['mapItems']:
                     if d['iconType'] in icons:
                         faction.append(d['teamId'])
-                        deltas.append(self.calc_distance(s['x'], s['y'], d['x'], d['y']))
+                        deltas.append(self.calc_distance((s['x'], s['y']), (d['x'], d['y'])))
 
                 captured_towns[s['text']]: str = faction[deltas.index(min(deltas))]
 
         return captured_towns
 
-    def make_map_png_sync(self, hexagon: str, dynamic: dict = None, static: dict = None):
+    def make_map_png_sync(self, hexagon: str, colored: bool = False, show_icons: bool = True, dynamic: dict = None, static: dict = None):
         if dynamic is None:
-            dynamic: dict = self.get_dynamic_sync(hexagon)
+            dynamic: dict = self.get_dynamic_sync(hexagon=hexagon)
+        
+        if static is None:
+            static: dict = self.get_static_sync(hexagon=hexagon, use_cache=True)
 
         if dynamic is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or dynamic (static is optional))")
 
-        img1 = self.load_hexagon_map(hexagon)
+        img1: Image = self.load_hexagon_map(hexagon)
         icon_size: tuple = self._icon_size
+        
+        if colored:
+            self.color_regions(image=img1, dynamic=dynamic, static=static)
 
-        for data in dynamic["mapItems"]:
-            image: str = data['iconType']
-            team: str = data["teamId"].strip()
+        if show_icons:
+            for data in dynamic["mapItems"]:
+                image: str = data['iconType']
+                team: str = data["teamId"].strip()
 
-            try:
-                img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}{team}.png")
-                img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
-            except Exception:
                 try:
-                    img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}.png")
+                    img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}{team}.png")
                     img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
+                
                 except Exception:
-                    continue
+                    try:
+                        img_path: str = os.path.join(self._img_dir, "MapIcons", f"{image}.png")
+                        img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
+                        
+                        img2 = self.change_color(image=img2, team=team)
 
-            img1.paste(img2, (int(data["x"] * 1024), int(data["y"] * 888)), mask=img2)
+                    except Exception:
+                        img_path: str = os.path.join(self._img_dir, "MapIcons", f"DebugIcon.png")
+                        img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
+
+                img1.paste(img2, (int(data["x"] * self.img_width), int(data["y"] * self.img_height)), mask=img2)
 
         return img1
 
@@ -453,9 +549,8 @@ class FoxAPI():
 
         captured_towns: dict = self.get_captured_towns_sync(dynamic=dynamic, static=static)
         casualty_rate: dict = self.calculate_death_rate_sync(hexagon=hexagon, war_report=war_report)
-        image = self.make_map_png_sync(hexagon=hexagon, dynamic=dynamic, static=static)
-
-        return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate, image=image)
+        
+        return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
     CRAWLER ASYNC
