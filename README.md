@@ -116,7 +116,7 @@ load_hexagon_map(hexagon: str) -> pillow.Image
  - Loads the PNG map for the specified hexagon.
 
 ```py
-make_map_png(hexagon: str, colored: bool = False, show_icons: bool = True, dynamic: dict = None, static: dict = None) -> pillow.Image
+make_map_png(hexagon: str, show_icons: bool = True, colored: bool = False, dynamic: dict = None, static: dict = None) -> pillow.Image
 ```
   - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
   - colored -> display each region in the team's color
