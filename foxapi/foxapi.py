@@ -9,7 +9,6 @@ import threading
 import requests
 import aiohttp
 import asyncio
-import pathlib
 import math
 import time
 import os
@@ -38,7 +37,7 @@ class FoxAPI():
         self.session: requests.Session = requests.Session()
 
         if image_dir is not None:
-            self._img_dir: str = pathlib.Path(image_dir)
+            self._img_dir: str = Path(image_dir)
 
         else:
             self._img_dir: str = os.path.join(Path(__file__).parent, "Images")
@@ -249,8 +248,10 @@ class FoxAPI():
                 p = pix[x, y]
 
                 if p[-1] >= 10:
-                    new_color: tuple = (p[0]-g + color[0], p[1]-g + color[1], p[2]-g + color[2])
-                    image.putpixel((x, y), new_color)
+                    continue
+                
+                new_color: tuple = (p[0]-g + color[0], p[1]-g + color[1], p[2]-g + color[2])
+                image.putpixel((x, y), new_color)
 
 
     def color_regions(self, image: Image, dynamic: dict, static: dict) -> Image:
@@ -304,7 +305,6 @@ class FoxAPI():
                 self.color_icon(img2, team=team)
 
             except Exception:
-                print(icon)
                 img_path: str = os.path.join(self._img_dir, "MapIcons", f"DebugIcon.png")
                 img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
 
