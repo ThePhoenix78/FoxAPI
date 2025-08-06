@@ -78,7 +78,7 @@ class FoxAPI():
     REQUESTS SYNC
     """
 
-    def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse:
+    def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = None) -> APIResponse:
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
 
         if use_cache == True:
@@ -112,7 +112,7 @@ class FoxAPI():
     REQUESTS ASYNC
     """
 
-    async def get_data(self, endpoint: str, session: aiohttp.ClientSession = None, etag: str = None, use_cache: bool = False):
+    async def get_data(self, endpoint: str, session: aiohttp.ClientSession = None, etag: str = None, use_cache: bool = None):
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
 
         if use_cache == True:
@@ -249,7 +249,7 @@ class FoxAPI():
 
                 if p[-1] >= 10:
                     continue
-                
+
                 new_color: tuple = (p[0]-g + color[0], p[1]-g + color[1], p[2]-g + color[2])
                 image.putpixel((x, y), new_color)
 
@@ -318,25 +318,25 @@ class FoxAPI():
         data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache)
         return data.json
 
-    async def get_war(self, use_cache: bool = False):
+    async def get_war(self, use_cache: bool = None):
         data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache)
         return data.json
 
-    async def get_static(self, hexagon: str, use_cache: bool = False):
+    async def get_static(self, hexagon: str, use_cache: bool = True):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache)
         return data.json
 
-    async def get_dynamic(self, hexagon: str, use_cache: bool = False):
+    async def get_dynamic(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache)
         return data.json
 
-    async def get_war_report(self, hexagon: str, use_cache: bool = False):
+    async def get_war_report(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
@@ -409,12 +409,12 @@ class FoxAPI():
 
         return {"colonials": war_c - self._death_rate_c[hexagon], "wardens": war_w - self._death_rate_w[hexagon], "hexagon": hexagon}
 
-    async def get_hexagon_data(self, hexagon: str, use_cache: bool = False):
+    async def get_hexagon_data(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
         war_report: dict = await self.get_war_report(hexagon=hexagon, use_cache=use_cache)
-        static: dict = await self.get_static(hexagon=hexagon, use_cache=use_cache)
+        static: dict = await self.get_static(hexagon=hexagon, use_cache=True)
         dynamic: dict = await self.get_dynamic(hexagon=hexagon, use_cache=use_cache)
 
         captured_towns: dict = await self.get_captured_towns(dynamic=dynamic, static=static)
@@ -429,22 +429,22 @@ class FoxAPI():
     def get_maps_sync(self, use_cache: bool = True):
         return self.get_data_sync(endpoint="/maps", use_cache=use_cache).json
 
-    def get_war_sync(self, use_cache: bool = False):
+    def get_war_sync(self, use_cache: bool = None):
         return self.get_data_sync(endpoint="/war", use_cache=use_cache).json
 
-    def get_static_sync(self, hexagon: str, use_cache: bool = False):
+    def get_static_sync(self, hexagon: str, use_cache: bool = True):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         return self.get_data_sync(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache).json
 
-    def get_dynamic_sync(self, hexagon: str, use_cache: bool = False):
+    def get_dynamic_sync(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         return self.get_data_sync(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache).json
 
-    def get_war_report_sync(self, hexagon: str, use_cache: bool = False):
+    def get_war_report_sync(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
@@ -519,7 +519,7 @@ class FoxAPI():
 
         return {"colonials": dph_c - self._death_rate_c[hexagon], "wardens": dph_w - self._death_rate_w[hexagon], "hexagon": hexagon}
 
-    def get_hexagon_data_sync(self, hexagon: str, use_cache: bool = False):
+    def get_hexagon_data_sync(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
