@@ -1,5 +1,7 @@
 # FoxAPI Documentation
 
+### Join our discord : https://discord.gg/XJJkuDYZXw
+
 ## Installation
 ```bash
 pip install foxapi
@@ -15,6 +17,7 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
 
 ## Table of Contents
 - [FoxAPI Documentation](#foxapi-documentation)
+    - [Join our discord : https://discord.gg/XJJkuDYZXw](#join-our-discord--httpsdiscordggxjjkudyzxw)
   - [Installation](#installation)
   - [Table of Contents](#table-of-contents)
   - [Dependencies](#dependencies)
