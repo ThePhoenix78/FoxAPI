@@ -32,12 +32,13 @@ Also, if you work with discord.py or any asynchronous API, this tool might be us
   - [Error Handling](#error-handling)
   - [Objects](#objects)
   - [Example Usage](#example-usage)
-      - [I am not responsible for what you are doing with it](#i-am-not-responsible-for-what-you-are-doing-with-it)
+    - [I am not responsible for what you are doing with it](#i-am-not-responsible-for-what-you-are-doing-with-it)
+
 
 ## Dependencies
 
    ```bash
-   pip install pillow requests
+   pip install pillow requests aiohttp
    ```
 
 ## Wrapper
@@ -181,9 +182,9 @@ asyncio.run(main())
 
 ## Error Handling
 
-```pyEndpointError```: Raised if an invalid API endpoint is used.
-```pyHexagonError```: Raised if an invalid hexagon is provided.
-```pyFoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).
+```EndpointError```: Raised if an invalid API endpoint is used.
+```HexagonError```: Raised if an invalid hexagon is provided.
+```FoxAPIError```: A general error for issues within the FoxAPI class (e.g., missing data).
 
 
 ## Objects
@@ -286,4 +287,4 @@ async def on_update(hexa: HexagonObject):
 
 ```
 
- #### I am not responsible for what you are doing with it
+### I am not responsible for what you are doing with it
