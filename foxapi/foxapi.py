@@ -75,7 +75,7 @@ class FoxAPI():
         self.session.close()
 
     """
-    REQUESTS SYNC
+    ---------------------------------------- REQUESTS SYNC ----------------------------------------
     """
 
     def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = None) -> APIResponse:
@@ -93,7 +93,7 @@ class FoxAPI():
             headers: dict = {"etag": ""}
 
         with self.session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-            self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
+            self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
 
             if data.status_code == 200:
                 self.cache[endpoint] = data.json()
@@ -109,7 +109,7 @@ class FoxAPI():
             return data
 
     """
-    REQUESTS ASYNC
+    ---------------------------------------- REQUESTS ASYNC ----------------------------------------
     """
 
     async def get_data(self, endpoint: str, session: aiohttp.ClientSession = None, etag: str = None, use_cache: bool = None):
@@ -129,7 +129,7 @@ class FoxAPI():
         if session is None:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-                    self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
+                    self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
                     data_json = await data.json()
                     
                     if data.status == 200:
@@ -142,11 +142,11 @@ class FoxAPI():
                     return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
         else:
             async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-                self.etag[endpoint]: str = data.headers.get("ETag", self.etag.get(endpoint))
+                self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
                 data_json: dict = await data.json()
 
                 if data.status == 200:
-                    self.cache[endpoint]: dict = data_json
+                    self.cache[endpoint] = data_json
                     return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
 
                 elif data.status == 304:
@@ -160,7 +160,7 @@ class FoxAPI():
                 return data
 
     """
-    TOOLS
+    ---------------------------------------- URL TOOLS ----------------------------------------
     """
 
     def _get_valid_endpoints(self):
@@ -186,16 +186,14 @@ class FoxAPI():
             if hexagon in self._available_hexagons[i]:
                 return self.available_hexagons[i]
 
-        return None
-
-    def _retrieve_hexagon_from_endpoint(self, endpoint: str):
+    def _retrieve_hexagon_from_endpoint(self, endpoint: str) -> str:
         if endpoint.startswith("/"):
             endpoint = endpoint[1:]
 
         if "maps/" in endpoint or "warReport/" in endpoint:
             return endpoint.split("/")[1]
 
-    def _format_endpoint(self, endpoint: str):
+    def _format_endpoint(self, endpoint: str) -> str:
         if "maps/" in endpoint or "warReport/" in endpoint:
             old_hexa: str = self._retrieve_hexagon_from_endpoint(endpoint)
             hexagon: str = self._format_hexagon(old_hexa)
@@ -203,10 +201,14 @@ class FoxAPI():
 
         return endpoint
 
-    def calc_distance(self, p1: tuple, p2: tuple):
+    """
+    ---------------------------------------- ADDITIONAL TOOLS ----------------------------------------
+    """
+
+    def calc_distance(self, p1: tuple, p2: tuple) -> float:
         return math.sqrt((abs(p1[0] - p2[0]) ** 2) + (abs(p1[1] - p2[1]) ** 2))
 
-    def bissectrice(self, p1: tuple, p2: tuple):
+    def bissectrice(self, p1: tuple, p2: tuple) -> tuple:
         mx, my = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
         
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
@@ -218,7 +220,22 @@ class FoxAPI():
         else:
             return None, mx
 
-    def load_hexagon_map(self, hexagon: str):
+    def _calc_death_rate(self, hexagon: str, war_report: dict) -> dict[str, int]:
+        war_c: int = war_report['colonialCasualties']
+        war_w: int = war_report['wardenCasualties']
+
+        if self._cpt_rate > self._cpt_rate_total or not self._death_rate_c.get(hexagon):
+            self._death_rate_c[hexagon] = war_c
+            self._death_rate_w[hexagon] = war_w
+            self._cpt_rate: int = 0
+
+        return {"colonials": war_c - self._death_rate_c[hexagon], "wardens": war_w - self._death_rate_w[hexagon], "hexagon": hexagon}
+
+    """
+    ---------------------------------------- IMAGE TOOLS ----------------------------------------
+    """
+
+    def load_hexagon_map(self, hexagon: str) -> Image:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
@@ -226,7 +243,7 @@ class FoxAPI():
 
         return Image.open(img_path).convert("RGBA")
 
-    def color_icon(self, image: Image, team: str = None) -> Image:
+    def color_icon(self, image: Image, team: str = None):
         f: int = 50
         g: int = 165
 
@@ -254,7 +271,7 @@ class FoxAPI():
                 image.putpixel((x, y), new_color)
 
 
-    def color_regions(self, image: Image, dynamic: dict, static: dict) -> Image:
+    def color_regions(self, image: Image, dynamic: dict, static: dict):
         captured_towns: dict = self.get_captured_towns_sync(dynamic=dynamic, static=static)
         map_info = [data for data in static["mapTextItems"] if data["mapMarkerType"] == "Major"]
         
@@ -292,12 +309,21 @@ class FoxAPI():
                 new_color: tuple = (current_pixel[0]//2 + color[0], current_pixel[1]//2 + color[1], current_pixel[2]//2 + color[2])
                 image.putpixel((x, y), new_color)
 
-    def add_icons(self, image: Image, dynamic: dict):
+    def add_icons(self, image: Image, icons: str | list, dynamic: dict):
         icon_size: tuple = self._icon_size
+
+        if isinstance(icons, list):
+            icons: list[str] = [str(i) for i in icons]
 
         for data in dynamic["mapItems"]:
             icon: str = data['iconType']
             team: str = data["teamId"].strip()
+
+            if icons == "all":
+                pass
+
+            elif str(icon) not in icons:
+                continue
 
             try:
                 img_path: str = os.path.join(self._img_dir, "MapIcons", f"{icon}.png")
@@ -310,8 +336,27 @@ class FoxAPI():
 
             image.paste(img2, (int(data["x"] * self.img_width), int(data["y"] * self.img_height)), mask=img2)
 
+    def associate_towns(self, dynamic: dict, static: dict) -> dict:
+        captured_towns: dict = {}
+        icons: list = [45, 46, 47, 56, 57, 58] # Town halls and relics
+
+        for s in static['mapTextItems']:
+            deltas: list = []
+            faction: list = []
+
+            if s['mapMarkerType'] == 'Major':
+                for d in dynamic['mapItems']:
+                    if d['iconType'] in icons:
+                        faction.append(d['teamId'])
+                        deltas.append(self.calc_distance((s['x'], s['y']), (d['x'], d['y'])))
+
+                captured_towns[s['text']] = faction[deltas.index(min(deltas))]
+
+        return captured_towns
+
+
     """
-    ASYNC METHODS
+    ---------------------------------------- ASYNC METHODS ----------------------------------------
     """
 
     async def get_maps(self, use_cache: bool = True):
@@ -344,10 +389,10 @@ class FoxAPI():
         return data.json
 
     """
-    ADDITIONAL ASYNC METHODS
+    ---------------------------------------- ADDITIONAL ASYNC METHODS ----------------------------------------
     """
 
-    async def get_captured_towns(self, hexagon: str = None, dynamic: dict = None, static: dict = None):
+    async def get_captured_towns(self, hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict[str, str]:
         if hexagon is not None and static is None and dynamic is None:
             static: dict = await self.get_static(hexagon, use_cache=True)
             dynamic: dict = await self.get_dynamic(hexagon)
@@ -355,25 +400,10 @@ class FoxAPI():
         if static is None or dynamic is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or (static and dynamic))")
 
-        captured_towns: dict = {}
-        icons: list = [45, 46, 47, 56, 57, 58] # Town halls and relics
+        return self.associate_towns(dynamic=dynamic, static=static)
 
-        for s in static['mapTextItems']:
-            deltas: list = []
-            faction: list = []
-
-            if s['mapMarkerType'] == 'Major':
-                for d in dynamic['mapItems']:
-                    if d['iconType'] in icons:
-                        faction.append(d['teamId'])
-                        deltas.append(self.calc_distance((s['x'], s['y']), (d['x'], d['y'])))
-
-                captured_towns[s['text']]: str = faction[deltas.index(min(deltas))]
-
-        return captured_towns
-
-    async def make_map_png(self, hexagon: str, show_icons: bool = True, colored: bool = False, dynamic: dict = None, static: dict = None):
-        if dynamic is None and (show_icons or colored):
+    async def make_map_png(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: dict = None, static: dict = None):
+        if dynamic is None and (icons or colored):
             dynamic: dict = await self.get_dynamic(hexagon=hexagon)
         
         if static is None and colored:
@@ -384,8 +414,8 @@ class FoxAPI():
         if colored:
             self.color_regions(image=img1, dynamic=dynamic, static=static)
 
-        if show_icons:
-            self.add_icons(image=img1, dynamic=dynamic)
+        if icons:
+            self.add_icons(image=img1, icons=icons, dynamic=dynamic)
 
         return img1
 
@@ -399,15 +429,7 @@ class FoxAPI():
         if war_report is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
 
-        war_c: int = war_report['colonialCasualties']
-        war_w: int = war_report['wardenCasualties']
-
-        if self._cpt_rate > self._cpt_rate_total or not self._death_rate_c.get(hexagon):
-            self._death_rate_c[hexagon]: int = war_c
-            self._death_rate_w[hexagon]: int = war_w
-            self._cpt_rate: int = 0
-
-        return {"colonials": war_c - self._death_rate_c[hexagon], "wardens": war_w - self._death_rate_w[hexagon], "hexagon": hexagon}
+        return self._calc_death_rate(hexagon=hexagon, war_report=war_report)
 
     async def get_hexagon_data(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
@@ -423,7 +445,7 @@ class FoxAPI():
         return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
-    SYNC METHODS
+    ---------------------------------------- SYNC METHODS ----------------------------------------
     """
 
     def get_maps_sync(self, use_cache: bool = True):
@@ -451,10 +473,10 @@ class FoxAPI():
         return self.get_data_sync(endpoint=f"/warReport/{hexagon}", use_cache=use_cache).json
 
     """
-    ADDITIONAL SYNC METHODS
+    ---------------------------------------- ADDITIONAL SYNC METHODS ----------------------------------------
     """
 
-    def get_captured_towns_sync(self, hexagon: str = None, dynamic: dict = None, static: dict = None):
+    def get_captured_towns_sync(self, hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict[str, str]:
         if hexagon is not None and static is None and dynamic is None:
             static: dict = self.get_static_sync(hexagon, use_cache=True)
             dynamic: dict = self.get_dynamic_sync(hexagon)
@@ -462,25 +484,10 @@ class FoxAPI():
         if static is None or dynamic is None:
             raise FoxAPIError("Please pass the required parameters (static and dynamic or hexagon)")
 
-        captured_towns: dict = {}
-        icons: list = [45, 46, 47, 56, 57, 58] # Town halls and relics
+        return self.associate_towns(dynamic=dynamic, static=static)
 
-        for s in static['mapTextItems']:
-            deltas: list = []
-            faction: list = []
-
-            if s['mapMarkerType'] == 'Major':
-                for d in dynamic['mapItems']:
-                    if d['iconType'] in icons:
-                        faction.append(d['teamId'])
-                        deltas.append(self.calc_distance((s['x'], s['y']), (d['x'], d['y'])))
-
-                captured_towns[s['text']]: str = faction[deltas.index(min(deltas))]
-
-        return captured_towns
-
-    def make_map_png_sync(self, hexagon: str, show_icons: bool = True, colored: bool = False, dynamic: dict = None, static: dict = None):
-        if dynamic is None and (show_icons or colored):
+    def make_map_png_sync(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: dict = None, static: dict = None):
+        if dynamic is None and (icons or colored):
             dynamic: dict = self.get_dynamic_sync(hexagon=hexagon)
         
         if static is None and colored:
@@ -491,8 +498,8 @@ class FoxAPI():
         if colored:
             self.color_regions(image=img1, dynamic=dynamic, static=static)
 
-        if show_icons:
-            self.add_icons(image=img1, dynamic=dynamic)
+        if icons:
+            self.add_icons(image=img1, icons=icons, dynamic=dynamic)
 
         return img1
 
@@ -506,18 +513,7 @@ class FoxAPI():
         if war_report is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
 
-        war_c: int = war_report['colonialCasualties']
-        war_w: int = war_report['wardenCasualties']
-
-        dph_c: int = war_c
-        dph_w: int  = war_w
-
-        if self._cpt_rate > self._cpt_rate_total or not self._death_rate_c.get(hexagon):
-            self._death_rate_c[hexagon]: int = war_c
-            self._death_rate_w[hexagon]: int = war_w
-            self._cpt_rate: int = 0
-
-        return {"colonials": dph_c - self._death_rate_c[hexagon], "wardens": dph_w - self._death_rate_w[hexagon], "hexagon": hexagon}
+        return self._calc_death_rate(hexagon=hexagon, war_report=war_report)
 
     def get_hexagon_data_sync(self, hexagon: str, use_cache: bool = None):
         if self._safe_mode:
@@ -533,7 +529,7 @@ class FoxAPI():
         return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
-    CRAWLER ASYNC
+    ---------------------------------------- CRAWLER ASYNC ----------------------------------------
     """
 
     async def _listener(self):
@@ -556,7 +552,7 @@ class FoxAPI():
             await asyncio.sleep(self._refresh)
 
     """
-    CRAWLER SYNC
+    ---------------------------------------- CRAWLER SYNC ----------------------------------------
     """
 
     def _listener_sync(self):
@@ -588,7 +584,7 @@ class FoxAPI():
             # threading.Thread(target=self.start_async_thread).start()
 
     """
-    ASYNC TOOLS
+    ---------------------------------------- ASYNC TOOLS ----------------------------------------
     """
     def add_task(self, function: callable, args: any = "no_args"):
         self.waiting_list.append([function, args])
@@ -670,7 +666,7 @@ class FoxAPI():
         loop.call_soon_threadsafe(loop.stop)
 
     """
-    EVENT WRAPPER
+     ----------------------------------------EVENT WRAPPER ----------------------------------------
     """
 
     def on_api_update(self, callback: callable = None, endpoints: list = None):
@@ -686,7 +682,7 @@ class FoxAPI():
 
         if self._safe_mode:
             for i in range(len(endpoints)):
-                endpoints[i]: str = self._format_endpoint(endpoints[i])
+                endpoints[i] = self._format_endpoint(endpoints[i])
 
         for i in range(len(endpoints)):
             if not self._is_valid_endpoint(endpoints[i]):
@@ -696,7 +692,7 @@ class FoxAPI():
             self._check_listener(asyncio.iscoroutinefunction(func))
 
             for endpoint in endpoints:
-                self._to_call[endpoint]: callable = func
+                self._to_call[endpoint] = func
 
             return func
 
@@ -718,7 +714,7 @@ class FoxAPI():
 
         if self._safe_mode:
             for i in range(len(hexagons)):
-                hexagons[i]: str = self._format_hexagon(hexagons[i])
+                hexagons[i] = self._format_hexagon(hexagons[i])
 
                 if not self._is_valid_hexagon(hexagons[i]):
                     raise HexagonError("Please enter a valid hexagon (FoxAPi.available_hexagons")
@@ -730,7 +726,7 @@ class FoxAPI():
                 ends: list = [f"/warReport/{hexagon}", f"/maps/{hexagon}/dynamic/public", f"/maps/{hexagon}/static"]
 
                 for hexa in ends:
-                    self._to_call[hexa]: callable = func
+                    self._to_call[hexa] = func
                     self._hex_call.append(hexa)
 
             return func

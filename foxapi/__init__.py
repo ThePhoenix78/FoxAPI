@@ -9,7 +9,7 @@ __author__ = 'ThePhoenix78'
 __license__ = 'MIT'
 __copyright__ = 'Copyright 2024-2025 ThePhoenix78'
 __url__ = 'https://github.com/ThePhoenix78/FoxAPI'
-__newest__ = __version__ = '1.6.7'
+__newest__ = __version__ = '1.7.0'
 
 
 try:
