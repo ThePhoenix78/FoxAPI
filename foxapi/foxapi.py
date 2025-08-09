@@ -247,9 +247,9 @@ class FoxAPI():
             for y in range(height):
                 p = pix[x, y]
 
-                if p[-1] >= 10:
+                if p[-1] <= 10:
                     continue
-
+                
                 new_color: tuple = (p[0]-g + color[0], p[1]-g + color[1], p[2]-g + color[2])
                 image.putpixel((x, y), new_color)
 
@@ -302,9 +302,9 @@ class FoxAPI():
             try:
                 img_path: str = os.path.join(self._img_dir, "MapIcons", f"{icon}.png")
                 img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
-                self.color_icon(img2, team=team)
+                self.color_icon(image=img2, team=team)
 
-            except Exception:
+            except Exception as e:
                 img_path: str = os.path.join(self._img_dir, "MapIcons", f"DebugIcon.png")
                 img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
 
