@@ -130,15 +130,16 @@ class FoxAPI():
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
                     self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
-                    data_json = await data.json()
                     
                     if data.status == 200:
+                        data_json = await data.json()
                         self.cache[endpoint] = data_json
                         return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
 
                     elif data.status == 304:
                         return APIResponse(headers=data.headers, json=self.cache.get(endpoint), status_code=data.status, hexagon=hexagon, is_cache=True)
-
+                    
+                    data_json = await data.json()
                     return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
         else:
             async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
