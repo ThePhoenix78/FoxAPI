@@ -360,29 +360,29 @@ class FoxAPI():
     ---------------------------------------- ASYNC METHODS ----------------------------------------
     """
 
-    async def get_maps(self, use_cache: bool = True, session: aiohttp.ClientSession = None):
+    async def get_maps(self, use_cache: bool = True, session: aiohttp.ClientSession | None = None):
         data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_war(self, use_cache: bool = None, session: aiohttp.ClientSession = None):
+    async def get_war(self, use_cache: bool = None, session: aiohttp.ClientSession | None = None):
         data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_static(self, hexagon: str, use_cache: bool = True, session: aiohttp.ClientSession = None):
+    async def get_static(self, hexagon: str, use_cache: bool = True, session: aiohttp.ClientSession | None = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_dynamic(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession = None):
+    async def get_dynamic(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession | None = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
         data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_war_report(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession = None):
+    async def get_war_report(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession | None = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
@@ -393,22 +393,22 @@ class FoxAPI():
     ---------------------------------------- ADDITIONAL ASYNC METHODS ----------------------------------------
     """
 
-    async def get_captured_towns(self, hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict[str, str]:
+    async def get_captured_towns(self, hexagon: str = None, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None) -> dict[str, str]:
         if hexagon is not None and static is None and dynamic is None:
-            static: dict = await self.get_static(hexagon, use_cache=True)
-            dynamic: dict = await self.get_dynamic(hexagon)
+            static: dict = await self.get_static(hexagon, use_cache=True, session=session)
+            dynamic: dict = await self.get_dynamic(hexagon, session=session)
 
         if static is None or dynamic is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or (static and dynamic))")
 
         return self.associate_towns(dynamic=dynamic, static=static)
 
-    async def make_map_png(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: dict = None, static: dict = None):
+    async def make_map_png(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None):
         if dynamic is None and (icons or colored):
-            dynamic: dict = await self.get_dynamic(hexagon=hexagon)
+            dynamic: dict = await self.get_dynamic(hexagon=hexagon, session=session)
         
         if static is None and colored:
-            static: dict = await self.get_static(hexagon=hexagon, use_cache=True)
+            static: dict = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
 
         img1: Image = self.load_hexagon_map(hexagon)
 
@@ -420,28 +420,28 @@ class FoxAPI():
 
         return img1
 
-    async def calculate_death_rate(self, hexagon: str = None, war_report: dict = None):
+    async def calculate_death_rate(self, hexagon: str = None, war_report: dict = None, session: aiohttp.ClientSession | None = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
         if war_report is None:
-            war_report: dict = await self.get_war_report(hexagon)
+            war_report: dict = await self.get_war_report(hexagon, session=session)
 
         if war_report is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
 
         return self._calc_death_rate(hexagon=hexagon, war_report=war_report)
 
-    async def get_hexagon_data(self, hexagon: str, use_cache: bool = None):
+    async def get_hexagon_data(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession | None = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
-        war_report: dict = await self.get_war_report(hexagon=hexagon, use_cache=use_cache)
-        static: dict = await self.get_static(hexagon=hexagon, use_cache=True)
-        dynamic: dict = await self.get_dynamic(hexagon=hexagon, use_cache=use_cache)
+        war_report: dict = await self.get_war_report(hexagon=hexagon, use_cache=use_cache, session=session)
+        static: dict = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
+        dynamic: dict = await self.get_dynamic(hexagon=hexagon, use_cache=use_cache, session=session)
 
-        captured_towns: dict = await self.get_captured_towns(dynamic=dynamic, static=static)
-        casualty_rate: dict = await self.calculate_death_rate(hexagon=hexagon, war_report=war_report)
+        captured_towns: dict = await self.get_captured_towns(dynamic=dynamic, static=static, session=session)
+        casualty_rate: dict = await self.calculate_death_rate(hexagon=hexagon, war_report=war_report, session=session)
         
         return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
