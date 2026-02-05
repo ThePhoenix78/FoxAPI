@@ -360,33 +360,33 @@ class FoxAPI():
     ---------------------------------------- ASYNC METHODS ----------------------------------------
     """
 
-    async def get_maps(self, use_cache: bool = True):
-        data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache)
+    async def get_maps(self, use_cache: bool = True, session: aiohttp.ClientSession = None):
+        data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_war(self, use_cache: bool = None):
-        data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache)
+    async def get_war(self, use_cache: bool = None, session: aiohttp.ClientSession = None):
+        data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_static(self, hexagon: str, use_cache: bool = True):
+    async def get_static(self, hexagon: str, use_cache: bool = True, session: aiohttp.ClientSession = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_dynamic(self, hexagon: str, use_cache: bool = None):
+    async def get_dynamic(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache, session=session)
         return data.json
 
-    async def get_war_report(self, hexagon: str, use_cache: bool = None):
+    async def get_war_report(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession = None):
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/warReport/{hexagon}", use_cache=use_cache)
+        data: APIResponse = await self.get_data(endpoint=f"/warReport/{hexagon}", use_cache=use_cache, session=session)
         return data.json
 
     """
