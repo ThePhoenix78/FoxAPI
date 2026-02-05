@@ -69,33 +69,33 @@ get_data(endpoint: str, etag: str = None, use_cache: bool = False) -> APIRespons
 ### Map and War Data
 
 ```py
-get_maps(use_cache: bool = True) -> list
+get_maps(use_cache: bool = True, session: aiohttp.ClientSession | None = None) -> list
 ```
  - Retrieves a list of available hexagons (maps) in the game world.
 
 ```py
-get_war(use_cache: bool = False) -> dict
+get_war(use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
 ```
   - Retrieves the current war state (war data).
 
 ```py
-get_static(hexagon: str, use_cache: bool = False) -> dict
+get_static(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
 ```
 
   - Retrieves the static data for the specified hexagon.
 
 ```py
-get_dynamic(hexagon: str, use_cache: bool = False) -> dict
+get_dynamic(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
 ```
   - Retrieves the dynamic data for the specified hexagon.
 
 ```py
-get_war_report(hexagon: str, use_cache: bool = False) -> dict
+get_war_report(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
 ```
   - Retrieves the war report for the specified hexagon.
 
 ```py
-get_hexagon_data(hexagon: str, use_cache: bool = False) -> HexagonObject
+get_hexagon_data(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> HexagonObject
 ```
 
   - Retrieves all the data awailable for the specified hexagon.
