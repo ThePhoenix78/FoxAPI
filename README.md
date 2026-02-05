@@ -109,7 +109,7 @@ calc_distance(x1: float, y1: float, x2: float, y2: float) -> float
   - Calculates the Euclidean distance between two points on the map.
 
 ```py
-get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None) -> dict
+get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None) -> dict
 ```
   - Retrieves the captured towns for a given hexagon based on dynamic and static data.
 
@@ -120,14 +120,14 @@ load_hexagon_map(hexagon: str) -> pillow.Image
  - Loads the PNG map for the specified hexagon.
 
 ```py
-make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: dict = None, static: dict = None) -> pillow.Image
+make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None) -> pillow.Image
 ```
   - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
   - colored -> display each region in the team's color
   - icons -> display selected building in their team's color
 
 ```py
-calculate_death_rate(hexagon: str = None, war_report: dict = None): -> dict
+calculate_death_rate(hexagon: str = None, war_report: dict = None, session: aiohttp.ClientSession | None = None): -> dict
 ```
   - calculate the death rate between the first launch and the current one
 
