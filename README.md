@@ -55,12 +55,13 @@ class FoxAPI(shard: str = "", image_dir: str = None, safe_mode: bool = True)
 #### Note : all of theses methods are async, to run the synchronous version, add _sync at the end (see API example)
 
 ```py
-get_data(endpoint: str, etag: str = None, use_cache: bool = False) -> APIResponse
+get_data(endpoint: str, session: aiohttp.ClientSession | None = None, etag: str = None, use_cache: bool = False) -> APIResponse
 ```  
   Fetches data from the specified endpoint, you can choose to use cache instead of sending a request and you can pass ETag.
 
   - Parameters:
     - `endpoint` (str): The API endpoint to call.
+    - `session` (aiohttp.ClientSession, optional) the async session
     - `etag` (str, optional): The ETag header for cache validation (not required since managed natively).
     - `use_cache` (bool, optional): Whether to use cached data (default: False).
 
