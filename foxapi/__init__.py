@@ -1,5 +1,5 @@
 from .foxapi import FoxAPI
-from .utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task
+from .utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task, _images_relations, _map_flags
 
 import requests, json
 
@@ -7,9 +7,9 @@ import requests, json
 __title__ = 'FoxAPI'
 __author__ = 'ThePhoenix78'
 __license__ = 'MIT'
-__copyright__ = 'Copyright 2024-2025 ThePhoenix78'
+__copyright__ = 'Copyright 2024-2026 ThePhoenix78'
 __url__ = 'https://github.com/ThePhoenix78/FoxAPI'
-__newest__ = __version__ = '1.7.2'
+__newest__ = __version__ = '1.9.0'
 
 
 try:

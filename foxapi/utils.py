@@ -55,7 +55,20 @@ _images_relations: dict = {
     "72": "RocketSiteWithRocket",
     "75": "FacilityMineOilRig",
     "83": "WeatherStation",
-    "84": "MortarHouse"
+    "84": "MortarHouse",
+    "88": "AircraftDepot",
+    "89": "AircraftFactory",
+    "90": "AircraftRadar",
+    "91": "AircraftRunwayT1",
+    "92": "AircraftRunwayT2"
+}
+
+_map_flags: dict = {
+    "0x01": "IsVictoryBase",
+    "0x02": "IsHomeBase",
+    "0x04": "IsBuildSite",
+    "0x10": "IsScorched",
+    "0x20": "IsTownClaimed"
 }
 
 class EndpointError(Exception):
