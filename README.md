@@ -278,12 +278,12 @@ fox = FoxAPI(shard="1")
 def function(hexagon: str = "DeadLandsHex"):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = fox.get_maps_sync()
-    war: dict = fox.get_war_sync()
+    war: WarObject = fox.get_war_sync()
 
     # Retrieve data for a specific hexagon
-    dynamic_data: dict = fox.get_dynamic_sync(hexagon)
-    static_data: dict = fox.get_static_sync(hexagon)
-    war_report: dict = fox.get_war_report_sync(hexagon)
+    dynamic_data: SDObject = fox.get_dynamic_sync(hexagon)
+    static_data: SDObject = fox.get_static_sync(hexagon)
+    war_report: WarReportObject = fox.get_war_report_sync(hexagon)
 
     # Create a map PNG for a hexagon with building informations on it
     map_image = fox.make_map_png_sync(hexagon)
@@ -298,12 +298,12 @@ def function(hexagon: str = "DeadLandsHex"):
 async def function(hexagon: str = "DeadLandsHex"):
     # Get the list of available hexagons (maps) and state of the current war
     maps: list = await fox.get_maps()
-    war: dict = await fox.get_war()
+    war: WarObject = await fox.get_war()
 
     # Retrieve data for a specific hexagon
-    dynamic_data: dict = await fox.get_dynamic(hexagon)
-    static_data: dict = await fox.get_static(hexagon)
-    war_report: dict = await fox.get_war_report(hexagon)
+    dynamic_data: SDObject = await fox.get_dynamic(hexagon)
+    static_data: SDObject = await fox.get_static(hexagon)
+    war_report: WarReportObject = await fox.get_war_report(hexagon)
 
     # Create a map PNG for a hexagon with building informations on it
     map_image = await fox.make_map_png(hexagon)
