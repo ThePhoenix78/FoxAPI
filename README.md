@@ -70,28 +70,28 @@ get_data(endpoint: str, session: aiohttp.ClientSession | None = None, etag: str 
 ### Map and War Data
 
 ```py
-get_maps(use_cache: bool = True, session: aiohttp.ClientSession | None = None) -> list
+get_maps(use_cache: bool = True, session: aiohttp.ClientSession | None = None) -> list[str]
 ```
  - Retrieves a list of available hexagons (maps) in the game world.
 
 ```py
-get_war(use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
+get_war(use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> WarObject
 ```
   - Retrieves the current war state (war data).
 
 ```py
-get_static(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
+get_static(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> SDObject
 ```
 
   - Retrieves the static data for the specified hexagon.
 
 ```py
-get_dynamic(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
+get_dynamic(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> SDObject
 ```
   - Retrieves the dynamic data for the specified hexagon.
 
 ```py
-get_war_report(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> dict
+get_war_report(hexagon: str, use_cache: bool = False, session: aiohttp.ClientSession | None = None) -> WarReportObject
 ```
   - Retrieves the war report for the specified hexagon.
 
@@ -110,7 +110,7 @@ calc_distance(x1: float, y1: float, x2: float, y2: float) -> float
   - Calculates the Euclidean distance between two points on the map.
 
 ```py
-get_captured_towns(hexagon: str = None, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None) -> dict
+get_captured_towns(hexagon: str = None, dynamic: SDObject = None, static: SDObject = None, session: aiohttp.ClientSession | None = None) -> dict
 ```
   - Retrieves the captured towns for a given hexagon based on dynamic and static data.
 
@@ -121,14 +121,14 @@ load_hexagon_map(hexagon: str) -> pillow.Image
  - Loads the PNG map for the specified hexagon.
 
 ```py
-make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: dict = None, static: dict = None, session: aiohttp.ClientSession | None = None) -> pillow.Image
+make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: SDObject = None, static: SDObject = None, session: aiohttp.ClientSession | None = None) -> pillow.Image
 ```
   - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
   - colored -> display each region in the team's color
   - icons -> display selected building in their team's color
 
 ```py
-calculate_death_rate(hexagon: str = None, war_report: dict = None, session: aiohttp.ClientSession | None = None): -> dict
+calculate_death_rate(hexagon: str = None, war_report: WarReportObject = None, session: aiohttp.ClientSession | None = None): -> dict
 ```
   - calculate the death rate between the first launch and the current one
 
@@ -193,30 +193,70 @@ asyncio.run(main())
 ## Objects
 
 ```python
-class Task:
-    def __init__(self, function: callable, args: any = "no_args", result: any = None):
-        self.function: callable = function
-        self.args: any = args
-        self.result: any = result
-
-
 class APIResponse:
-    def __init__(self, headers: dict, json: dict, status_code: int, hexagon: str, is_use_cache: bool):
-        self.headers: dict = headers
-        self.json: dict = json
-        self.status_code: int = status_code
-        self.hexagon: str = hexagon
-        self.is_cache: bool = is_cache
+    headers: dict
+    json: dict
+    status_code: int
+    hexagon: str
+    is_cache: bool
 
 
 class HexagonObject:
-    def __init__(self, hexagon: str, war_report: dict, static: dict, dynamic: dict, captured_towns: dict, casualty_rate: dict):
-        self.hexagon: str = hexagon
-        self.war_report: dict = war_report
-        self.static: dict = static
-        self.dynamic: dict = dynamic
-        self.captured_towns: dict = captured_towns
-        self.casualty_rate: dict = casualty_rate
+    hexagon: str
+    war_report: WarReportObject
+    static: SDObject
+    dynamic: SDObject
+    captured_towns: dict
+    casualty_rate: dict
+
+
+class WarObject:
+    warId: str
+    warNumber: int
+    winner: str
+    conquestStartTime: str
+    conquestEndTime: str
+    resistanceStartTime: str
+    scheduledConquestEndTime: str
+    requiredVictoryTowns: str
+    shortRequiredVictoryTowns: str
+
+
+class WarReportObject:
+    totalEnlistments: int
+    colonialCasualties: int
+    wardenCasualties: int
+    dayOfWar: int
+    version: int
+
+
+class MapItemsObject:
+    teamId: str
+    iconType: int
+    x: float
+    y: float
+    flags: int
+    viewDirection: int
+
+
+class MapTextItemsObject:
+    text: str
+    x: float
+    y: float
+    mapMarkerType: str
+
+
+class SDObject:
+    regionId: int
+    scorchedVictoryTowns: int
+
+    mapItems: list[MapItemsObject]
+    mapItemsC: list[MapItemsObject]
+    mapItemsW: list[MapItemsObject]
+    mapTextItems: list[MapTextItemsObject]
+    
+    lastUpdated: int
+    version: int
 ```
 
 
