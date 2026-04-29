@@ -10,7 +10,7 @@ pip install foxapi
 
 `FoxAPI` is a wrapper for the Official Foxhole API. It provides methods to interact with various endpoints related to maps, war data, dynamic/static map states, and more. The client supports data caching and etags natively to avoid overloading the Foxhole servers.
 
-If you are new to the developer world (or lazy like me), it's the perfect tool!
+If you are new to the developer world or just like coding, it's the perfect tool!
 
 Also, if you work with discord.py or any asynchronous API, this tool might be useful as well since it support async methods natively as well as synchronous
 
@@ -121,11 +121,12 @@ load_hexagon_map(hexagon: str) -> pillow.Image
  - Loads the PNG map for the specified hexagon.
 
 ```py
-make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: SDObject = None, static: SDObject = None, session: aiohttp.ClientSession | None = None) -> pillow.Image
+make_map_png(hexagon: str, icons: str | list = "all", colored: bool = False, dynamic: SDObject = None, static: SDObject = None, force: bool = False, session: aiohttp.ClientSession | None = None) -> pillow.Image
 ```
   - Generates a PNG image of the hexagon map with all the icons associated to each faction in their respective colors (included fields and town base). Only public data will be present.
   - colored -> display each region in the team's color
   - icons -> display selected building in their team's color
+  - force -> bypass the cache and generate a new map
 
 ```py
 calculate_death_rate(hexagon: str = None, war_report: WarReportObject = None, session: aiohttp.ClientSession | None = None): -> dict
@@ -220,6 +221,7 @@ class WarObject:
     scheduledConquestEndTime: str
     requiredVictoryTowns: str
     shortRequiredVictoryTowns: str
+    response: APIResponse
 
 
 class WarReportObject:
@@ -228,6 +230,7 @@ class WarReportObject:
     wardenCasualties: int
     dayOfWar: int
     version: int
+    response: APIResponse
 
 
 class MapItemsObject:
@@ -257,6 +260,7 @@ class SDObject:
     
     lastUpdated: int
     version: int
+    response: APIResponse
 ```
 
 
