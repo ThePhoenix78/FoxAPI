@@ -17,29 +17,25 @@ class FoxObject(dict):
             else:
                 setattr(self, k, FoxObject(v))
     """
-
+    
     def __repr__(self):
         return str({k: v for k, v in self.__dict__.items()})
 
-    def __getitem__(self, x: str | int):
-        print("FoxAPI is moving toward objects for API endpoints, please start using object.attribute instead of object['attribute']")
-        print("You can also use object.json['attribute'] for JSON manpulations (like saving to JSON)")
+    def __getitem__(self, item: str | int):
+        data = None
 
-        caller = inspect.stack()[1]
-        code = inspect.getsource(caller.frame).split("\n")[caller.lineno-1]
-
-        print(f"Line using it ({caller.lineno}) : {code}")
-
-        if isinstance(x, str):
-            data = getattr(self, x)
+        if isinstance(item, str):
+            data = getattr(self, item)
 
             if isinstance(data, list):
                 if data and isinstance(data[0], FoxObject):
-
+                    caller = inspect.stack()[1]
+                    code = inspect.getsource(caller.frame).split("\n")[caller.lineno-1]
+                    
                     if "]." not in code:
                         return [d.json for d in data]
             
-            return data
+        return data
 
     def __setitem__(self, k, v):
         setattr(self, k, v)
@@ -51,11 +47,24 @@ class FoxObject(dict):
     def items(self):
         return self.__dict__.items()
     
+    def get(self, item, default=None):
+        data = getattr(self, item)
+
+        if data is None:
+            return default
+    
+        return data
+ 
     @property
     def json(self):
+        ignore: list = ["response"]
+
         dico: dict = {}
 
         for k, v in self.__dict__.items():
+            if k in ignore:
+                continue
+            
             if isinstance(v, list):
                 if v and isinstance(v[0], FoxObject):
                     dico[k] = [d.json for d in v]
@@ -86,6 +95,7 @@ class WarObject(FoxObject):
             scheduledConquestEndTime: str,
             requiredVictoryTowns: int,
             shortRequiredVictoryTowns: int,
+            response=None,
             **kwargs
         ):
         
@@ -99,6 +109,8 @@ class WarObject(FoxObject):
         self.requiredVictoryTowns: str = requiredVictoryTowns
         self.shortRequiredVictoryTowns: str = shortRequiredVictoryTowns
 
+        self.response = response
+
 
 class WarReportObject(FoxObject):
     def __init__(self,
@@ -107,6 +119,7 @@ class WarReportObject(FoxObject):
             wardenCasualties: int,
             dayOfWar: int,
             version: int,
+            response=None,
             **kwargs
         ):
 
@@ -117,6 +130,8 @@ class WarReportObject(FoxObject):
         
         self.dayOfWar: int = dayOfWar
         self.version: int = version
+
+        self.response = response
 
 
 class MapItemsObject(FoxObject):
@@ -159,12 +174,13 @@ class SDObject(FoxObject):
     def __init__(self,
             regionId: int,
             scorchedVictoryTowns: int,
-            mapItems: list,
-            mapItemsC: list,
-            mapItemsW: list,
-            mapTextItems: list,
+            mapItems: list[MapItemsObject],
+            mapItemsC: list[MapItemsObject],
+            mapItemsW: list[MapItemsObject],
+            mapTextItems: list[MapTextItemsObject],
             lastUpdated: int,
             version: int,
+            response=None,
             **kwargs
         ):
         
@@ -179,3 +195,5 @@ class SDObject(FoxObject):
         
         self.lastUpdated: int = lastUpdated
         self.version: int = version
+
+        self.response = response
