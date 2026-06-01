@@ -9,73 +9,20 @@ class FoxObject(dict):
     Universal wrapper for any kind of dict item
     if the data structure change I won't have to do
     massive change in the code
-
-    def __init__(self, dico: dict):
-        for k, v in dico.items():
-            if not isinstance(v, dict):
-                setattr(self, k, v)
-            else:
-                setattr(self, k, FoxObject(v))
     """
-    
-    def __repr__(self):
-        return str({k: v for k, v in self.__dict__.items()})
+    def __init__(self, dico: dict):
 
-    def __getitem__(self, item: str | int):
-        data = None
+        for k, v in dico.items():
+            self.__setitem__(k, v)
 
-        if isinstance(item, str):
-            data = getattr(self, item)
+    def __setattr__(self, k, v):
+        super().__setitem__(k, FoxObject(v))
 
-            if isinstance(data, list):
-                if data and isinstance(data[0], FoxObject):
-                    caller = inspect.stack()[1]
-                    code = inspect.getsource(caller.frame).split("\n")[caller.lineno-1]
-                    
-                    if "]." not in code:
-                        return [d.json for d in data]
-            
-        return data
-
+    def __getattr__(self, k):
+        return super().get(k)
+        
     def __setitem__(self, k, v):
-        setattr(self, k, v)
-
-    def __iter__(self):
-        for k, v in self.__dict__.items():
-            yield str(k), v
-
-    def items(self):
-        return self.__dict__.items()
-    
-    def get(self, item, default=None):
-        data = getattr(self, item)
-
-        if data is None:
-            return default
-    
-        return data
- 
-    @property
-    def json(self):
-        ignore: list = ["response"]
-
-        dico: dict = {}
-
-        for k, v in self.__dict__.items():
-            if k in ignore:
-                continue
-            
-            if isinstance(v, list):
-                if v and isinstance(v[0], FoxObject):
-                    dico[k] = [d.json for d in v]
-                
-                else:
-                    dico[k] = v
-            
-            else:
-                dico[k] = v
-
-        return dico
+        super().__setitem__(k, FoxObject(v))
 
 
 class APIObject(FoxObject):
