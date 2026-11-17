@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "FoxAPI"
+version = "3.0.0"
+description = "Python client for the Foxhole War API (sync and async, with map generation)."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "ThePhoenix78" }]
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "pillow>=11.0.0",
+    "aiohttp",
+]
+
+[project.urls]
+Homepage = "https://github.com/ThePhoenix78/FoxAPI"
+
+[tool.setuptools]
+packages = ["foxapi"]
+
+[tool.setuptools.package-data]
+foxapi = ["Images/MapIcons/*.png", "Images/MapsHex/*.png"]
