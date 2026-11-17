@@ -71,6 +71,20 @@ _map_flags: dict = {
     "0x20": "IsTownClaimed"
 }
 
+MAP_FLAGS: dict = {
+    0x01: "IsVictoryBase",
+    0x02: "IsHomeBase",
+    0x04: "IsBuildSite",
+    0x10: "IsScorched",
+    0x20: "IsTownClaimed"
+}
+
+
+def decode_flags(flags: int) -> list[str]:
+    """Translates the 'flags' field of a map item into a list of names"""
+    return [name for bit, name in MAP_FLAGS.items() if int(flags or 0) & bit]
+
+
 class EndpointError(Exception):
     pass
 

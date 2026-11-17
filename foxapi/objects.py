@@ -1,34 +1,41 @@
-import inspect
-
-class FoxObject:
-    pass
-
-
 class FoxObject(dict):
     """
     Universal wrapper for any kind of dict item
     if the data structure change I won't have to do
     massive change in the code
     """
-    def __init__(self, dico: dict):
+    def __init__(self, dico: dict = None):
+        super().__init__()
 
-        for k, v in dico.items():
-            self.__setitem__(k, v)
+        for k, v in (dico or {}).items():
+            self[k] = v
+
+    @staticmethod
+    def _wrap(v):
+        # only dicts (and dicts inside lists) are wrapped, scalars are kept as is
+        if isinstance(v, FoxObject):
+            return v
+
+        if isinstance(v, dict):
+            return FoxObject(v)
+
+        if isinstance(v, list):
+            return [FoxObject._wrap(e) for e in v]
+
+        return v
 
     def __setattr__(self, k, v):
-        super().__setitem__(k, FoxObject(v))
+        super().__setitem__(k, self._wrap(v))
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, self._wrap(v))
 
     def __getattr__(self, k):
-        return super().get(k)
-        
-    def __setitem__(self, k, v):
-        super().__setitem__(k, FoxObject(v))
+        try:
+            return self[k]
 
-
-class APIObject(FoxObject):
-    def __init__(self, api_response):
-        self.response = api_response
-        self.json: FoxObject = FoxObject(api_response.json)
+        except KeyError:
+            raise AttributeError(k) from None
 
 
 class WarObject(FoxObject):
@@ -36,25 +43,25 @@ class WarObject(FoxObject):
             warId: str,
             warNumber: int,
             winner: str,
-            conquestStartTime: str,
-            conquestEndTime: str,
-            resistanceStartTime: str,
-            scheduledConquestEndTime: str,
+            conquestStartTime: int,
+            conquestEndTime: int,
+            resistanceStartTime: int,
+            scheduledConquestEndTime: int,
             requiredVictoryTowns: int,
             shortRequiredVictoryTowns: int,
             response=None,
             **kwargs
         ):
-        
+
         self.warId: str = warId
         self.warNumber: int = warNumber
         self.winner: str = winner
-        self.conquestStartTime: str = conquestStartTime
-        self.conquestEndTime: str = conquestEndTime
-        self.resistanceStartTime: str = resistanceStartTime
-        self.scheduledConquestEndTime: str = scheduledConquestEndTime
-        self.requiredVictoryTowns: str = requiredVictoryTowns
-        self.shortRequiredVictoryTowns: str = shortRequiredVictoryTowns
+        self.conquestStartTime: int = conquestStartTime
+        self.conquestEndTime: int = conquestEndTime
+        self.resistanceStartTime: int = resistanceStartTime
+        self.scheduledConquestEndTime: int = scheduledConquestEndTime
+        self.requiredVictoryTowns: int = requiredVictoryTowns
+        self.shortRequiredVictoryTowns: int = shortRequiredVictoryTowns
 
         self.response = response
 
@@ -71,10 +78,10 @@ class WarReportObject(FoxObject):
         ):
 
         self.totalEnlistments: int = totalEnlistments
-        
+
         self.colonialCasualties: int = colonialCasualties
         self.wardenCasualties: int = wardenCasualties
-        
+
         self.dayOfWar: int = dayOfWar
         self.version: int = version
 
@@ -94,7 +101,7 @@ class MapItemsObject(FoxObject):
 
         self.teamId: str = teamId
         self.iconType: int = iconType
-        
+
         self.x: float = x
         self.y: float = y
 
@@ -130,16 +137,16 @@ class SDObject(FoxObject):
             response=None,
             **kwargs
         ):
-        
+
         self.regionId: int = regionId
         self.scorchedVictoryTowns: int = scorchedVictoryTowns
 
         self.mapItems: list[MapItemsObject] = [MapItemsObject(**elem) for elem in mapItems]
         self.mapItemsC: list[MapItemsObject] = [MapItemsObject(**elem) for elem in mapItemsC]
         self.mapItemsW: list[MapItemsObject] = [MapItemsObject(**elem) for elem in mapItemsW]
-        
+
         self.mapTextItems: list[MapTextItemsObject] = [MapTextItemsObject(**elem) for elem in mapTextItems]
-        
+
         self.lastUpdated: int = lastUpdated
         self.version: int = version
 

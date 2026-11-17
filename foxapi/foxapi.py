@@ -5,12 +5,16 @@ except ImportError:
     from utils import HexagonObject, FoxAPIError, HexagonError, EndpointError, APIResponse, Task
     from objects import WarObject, WarReportObject, SDObject
 
-from PIL import Image
+from PIL import Image, ImageChops
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import threading
 import requests
 import aiohttp
 import asyncio
+import inspect
+import logging
 import math
 import time
 import os
@@ -21,8 +25,14 @@ import os
 # documentation at https://foxhole.fandom.com/wiki/War_API
 
 
+logger = logging.getLogger("foxapi")
+
+
 class FoxAPI():
-    def __init__(self, shard: str = "", image_dir: str = None, safe_mode: bool = True):
+    # the regions are computed on a grid reduced by this factor (much faster, 4 px blocks)
+    _REGION_SCALE: int = 4
+
+    def __init__(self, shard: str = "", image_dir: str = None, safe_mode: bool = True, timeout: float = 10, refresh: float = 60, workers: int = 8):
         if shard in ["", 1, "1", "-1"]:
             shard: str = "live"
 
@@ -37,6 +47,7 @@ class FoxAPI():
 
         self.base_api: str = f"https://war-service-{shard}.foxholeservices.com/api/worldconquest"
         self.session: requests.Session = requests.Session()
+        self._timeout: float = timeout
 
         if image_dir is not None:
             self._img_dir: str = Path(image_dir)
@@ -48,14 +59,21 @@ class FoxAPI():
         self.cache_img: dict = {}
         self.etag: dict = {}
 
-        self._death_rate_w : dict = {}
-        self._death_rate_c : dict = {}
+        # casualties baseline, kept per hexagon and renewed every _rate_period seconds
+        self._death_rate_w: dict = {}
+        self._death_rate_c: dict = {}
+        self._death_rate_time: dict = {}
+        self._rate_period: int = 3600
 
-        self._refresh: int = 60
-        self._cpt_rate_total: int = 3600 // self._refresh
-        self._cpt_rate: int = 0
+        self._refresh: float = 60
+        self.refresh = refresh
 
         self._safe_mode: bool = safe_mode
+
+        # images kept in memory (base maps, icons, regions of each hexagon)
+        self._base_maps: dict = {}
+        self._icon_cache: dict = {}
+        self._regions_cache: dict = {}
 
         self.available_hexagons: list = self.get_maps_sync()
         self._available_hexagons: list = [h.lower() for h in self.available_hexagons]
@@ -63,25 +81,87 @@ class FoxAPI():
 
         self._valid_endpoints: list = self._get_valid_endpoints()
 
+        # listener state
         self._run: bool = False
+        self._lock: threading.Lock = threading.Lock()
+        self._wake: threading.Event = threading.Event()
+        self._listener_thread: threading.Thread = None
+        self._bg_loop: asyncio.AbstractEventLoop = None
 
-        self._to_call: dict = {}
-        self._hex_call: list = []
+        self._to_call: dict = {}      # endpoint -> [callbacks]
+        self._hex_to_call: dict = {}  # hexagon -> [callbacks]
         self.waiting_list: list = []
+
+        # the listener keeps its own etags, so the calls made by the user can't hide an update from it
+        self._listener_etag: dict = {}
+        # last data seen by the listener : some endpoints (/war, /maps) have no etag
+        # and always answer 200, the content is compared to detect a real change
+        self._listener_seen: dict = {}
+
+        # callback -> True if it takes the data as keyword arguments (FoxAPI 2.x style)
+        self._legacy_callbacks: dict = {}
+
+        # number of requests sent at the same time by the listener, each thread has its own session
+        if not isinstance(workers, int) or workers < 1:
+            raise ValueError("workers must be an integer greater than 0")
+
+        self._workers: int = workers
+        self._local: threading.local = threading.local()
+        self._listener_sessions: list = []
 
         self._icon_size: tuple = (24, 24)
 
         self.img_height: int = 888
         self.img_width: int = 1024
 
+    @property
+    def refresh(self) -> float:
+        """Time (in seconds) between two checks of the listener"""
+        return self._refresh
+
+    @refresh.setter
+    def refresh(self, value: float):
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise ValueError("refresh must be a number greater than 0")
+
+        self._refresh = value
+
     def close_session(self):
+        self.stop_listener()
         self.session.close()
+
+    """
+    ---------------------------------------- REQUESTS TOOLS ----------------------------------------
+    """
+
+    def _make_headers(self, endpoint: str, etag: str = None, etags: dict = None) -> dict:
+        # etag == "" forces a full answer, etag is None uses the last known etag
+        if etag is None:
+            etag: str = (self.etag if etags is None else etags).get(endpoint)
+
+        return {"If-None-Match": etag} if etag else {}
+
+    def _retry_after(self, headers) -> float:
+        try:
+            return max(1.0, float(headers.get("Retry-After")))
+
+        except (TypeError, ValueError):
+            return max(60.0, self._refresh)
+
+    def _json_or_raise(self, data: APIResponse, endpoint: str):
+        if data.status_code not in (None, 200, 304) or data.json is None:
+            raise FoxAPIError(f"The request to {endpoint} failed (HTTP status: {data.status_code})")
+
+        return data.json
 
     """
     ---------------------------------------- REQUESTS SYNC ----------------------------------------
     """
 
     def get_data_sync(self, endpoint: str, etag: str = None, use_cache: bool = None) -> APIResponse:
+        return self._fetch_sync(endpoint=endpoint, etag=etag, use_cache=use_cache, session=self.session, etags=self.etag)
+
+    def _fetch_sync(self, endpoint: str, etag: str = None, use_cache: bool = None, session: requests.Session = None, etags: dict = None) -> APIResponse:
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
 
         if use_cache == True:
@@ -90,30 +170,57 @@ class FoxAPI():
             if cached_data is not None:
                 return APIResponse(headers={}, json=cached_data, status_code=None, hexagon=hexagon, is_cache=True)
 
-        headers: dict = {"If-None-Match": etag} if etag is not None else {"If-None-Match": self.etag.get(endpoint)}
+        headers: dict = self._make_headers(endpoint, etag, etags)
 
-        if self.etag.get(endpoint) is None or etag == "":
-            headers: dict = {"etag": ""}
-
-        with self.session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-            self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
+        with session.get(f"{self.base_api}{endpoint}", headers=headers, timeout=self._timeout) as data:
+            etags[endpoint] = data.headers.get("ETag", etags.get(endpoint))
 
             if data.status_code == 200:
-                self.cache[endpoint] = data.json()
-                return APIResponse(headers=data.headers, json=data.json(), status_code=data.status_code, hexagon=hexagon, is_cache=False)
+                data_json = data.json()
+                self.cache[endpoint] = data_json
+                return APIResponse(headers=data.headers, json=data_json, status_code=data.status_code, hexagon=hexagon, is_cache=False)
 
             elif data.status_code == 304:
-                return APIResponse(headers=data.headers, json=self.cache.get(endpoint), status_code=data.status_code, hexagon=hexagon, is_cache=True)
+                cached_data = self.cache.get(endpoint)
 
-            return APIResponse(headers=data.headers, json={}, status_code=data.status_code, hexagon=hexagon, is_cache=False)
+                if cached_data is not None or not headers:
+                    return APIResponse(headers=data.headers, json=cached_data, status_code=data.status_code, hexagon=hexagon, is_cache=True)
+
+            else:
+                return APIResponse(headers=data.headers, json={}, status_code=data.status_code, hexagon=hexagon, is_cache=False)
+
+        # 304 received but nothing in the cache (custom etag) : ask for the full data
+        return self._fetch_sync(endpoint=endpoint, etag="", session=session, etags=etags)
 
     def get_headers_sync(self, endpoint: str):
-        with self.session.head(f"{self.base_api}{endpoint}") as data:
+        with self.session.head(f"{self.base_api}{endpoint}", timeout=self._timeout) as data:
             return data
 
     """
     ---------------------------------------- REQUESTS ASYNC ----------------------------------------
     """
+
+    async def _request(self, session: aiohttp.ClientSession, endpoint: str, headers: dict, hexagon: str) -> APIResponse:
+        timeout = aiohttp.ClientTimeout(total=self._timeout)
+
+        async with session.get(f"{self.base_api}{endpoint}", headers=headers, timeout=timeout) as data:
+            self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
+
+            if data.status == 200:
+                data_json = await data.json()
+                self.cache[endpoint] = data_json
+                return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
+
+            elif data.status == 304:
+                cached_data = self.cache.get(endpoint)
+
+                if cached_data is not None or not headers:
+                    return APIResponse(headers=data.headers, json=cached_data, status_code=data.status, hexagon=hexagon, is_cache=True)
+
+                # 304 received but nothing in the cache (custom etag)
+                return None
+
+            return APIResponse(headers=data.headers, json={}, status_code=data.status, hexagon=hexagon, is_cache=False)
 
     async def get_data(self, endpoint: str, session: aiohttp.ClientSession = None, etag: str = None, use_cache: bool = None):
         hexagon: str = self._retrieve_hexagon_from_endpoint(endpoint)
@@ -124,48 +231,41 @@ class FoxAPI():
             if cached_data is not None:
                 return APIResponse(headers={}, json=cached_data, status_code=None, hexagon=hexagon, is_cache=True)
 
-        headers: dict = {"If-None-Match": etag} if etag is not None else {"If-None-Match": self.etag.get(endpoint)}
-
-        if self.etag.get(endpoint) is None or etag == "":
-            headers: dict = {"etag": ""}
-
         if session is None:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-                    self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
-                    
-                    if data.status == 200:
-                        data_json = await data.json()
-                        self.cache[endpoint] = data_json
-                        return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
+            async with self._session_scope() as new_session:
+                return await self.get_data(endpoint=endpoint, session=new_session, etag=etag, use_cache=use_cache)
 
-                    elif data.status == 304:
-                        return APIResponse(headers=data.headers, json=self.cache.get(endpoint), status_code=data.status, hexagon=hexagon, is_cache=True)
-                    
-                    data_json = await data.json()
-                    return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
-        else:
-            async with session.get(f"{self.base_api}{endpoint}", headers=headers) as data:
-                self.etag[endpoint] = data.headers.get("ETag", self.etag.get(endpoint))
-                data_json: dict = await data.json()
+        headers: dict = self._make_headers(endpoint, etag)
+        answer: APIResponse = await self._request(session=session, endpoint=endpoint, headers=headers, hexagon=hexagon)
 
-                if data.status == 200:
-                    self.cache[endpoint] = data_json
-                    return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
+        if answer is None:
+            answer: APIResponse = await self._request(session=session, endpoint=endpoint, headers={}, hexagon=hexagon)
 
-                elif data.status == 304:
-                    return APIResponse(headers=data.headers, json=self.cache.get(endpoint), status_code=data.status, hexagon=hexagon, is_cache=True)
+        return answer
 
-                return APIResponse(headers=data.headers, json=data_json, status_code=data.status, hexagon=hexagon, is_cache=False)
+    @asynccontextmanager
+    async def _session_scope(self, session: aiohttp.ClientSession = None):
+        # one aiohttp session shared by all the requests of a method
+        if session is not None:
+            yield session
+            return
+
+        async with aiohttp.ClientSession() as new_session:
+            yield new_session
 
     async def get_headers(self, endpoint: str):
+        timeout = aiohttp.ClientTimeout(total=self._timeout)
+
         async with aiohttp.ClientSession() as session:
-            async with session.head(f"{self.base_api}{endpoint}") as data:
+            async with session.head(f"{self.base_api}{endpoint}", timeout=timeout) as data:
                 return data
 
     """
     ---------------------------------------- URL TOOLS ----------------------------------------
     """
+
+    def _hexagon_endpoints(self, hexagon: str) -> list:
+        return [f"/warReport/{hexagon}", f"/maps/{hexagon}/dynamic/public", f"/maps/{hexagon}/static"]
 
     def _get_valid_endpoints(self):
         valid: list = ["/war", "/maps"]
@@ -184,11 +284,26 @@ class FoxAPI():
         return hexagon in self.available_hexagons
 
     def _format_hexagon(self, hexagon: str):
-        hexagon: str = hexagon.lower().strip().replace(" ", "")
+        if not isinstance(hexagon, str) or not hexagon.strip():
+            raise HexagonError(f"'{hexagon}' is not a valid hexagon (FoxAPI.available_hexagons)")
 
-        for i in range(self._nb_hex):
-            if hexagon in self._available_hexagons[i]:
-                return self.available_hexagons[i]
+        key: str = hexagon.lower().strip().replace(" ", "")
+
+        # exact name first ("deadlandshex" or "deadlands")
+        for candidate in (key, f"{key}hex"):
+            if candidate in self._available_hexagons:
+                return self.available_hexagons[self._available_hexagons.index(candidate)]
+
+        # then partial name, only if there is no doubt
+        matches: list = [self.available_hexagons[i] for i in range(self._nb_hex) if key in self._available_hexagons[i]]
+
+        if len(matches) == 1:
+            return matches[0]
+
+        if not matches:
+            raise HexagonError(f"'{hexagon}' is not a valid hexagon (FoxAPI.available_hexagons)")
+
+        raise HexagonError(f"'{hexagon}' is ambiguous, it matches: {', '.join(matches)}")
 
     def _retrieve_hexagon_from_endpoint(self, endpoint: str) -> str:
         if endpoint.startswith("/"):
@@ -200,7 +315,13 @@ class FoxAPI():
     def _format_endpoint(self, endpoint: str) -> str:
         if "maps/" in endpoint or "warReport/" in endpoint:
             old_hexa: str = self._retrieve_hexagon_from_endpoint(endpoint)
-            hexagon: str = self._format_hexagon(old_hexa)
+
+            try:
+                hexagon: str = self._format_hexagon(old_hexa)
+
+            except HexagonError as e:
+                raise EndpointError(f"{endpoint} not valid! {e}") from None
+
             endpoint: str = endpoint.replace(old_hexa, hexagon)
 
         return endpoint
@@ -214,9 +335,9 @@ class FoxAPI():
 
     def bissectrice(self, p1: tuple, p2: tuple) -> tuple:
         mx, my = (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
-        
+
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-        
+
         if dx != 0:
             slope = -dy / dx
             intercept = my - slope * mx
@@ -224,14 +345,30 @@ class FoxAPI():
         else:
             return None, mx
 
+    def _death_rate_hexagon(self, hexagon: str = None, war_report: WarReportObject = None) -> str:
+        if hexagon is None and war_report is not None:
+            response = getattr(war_report, "response", None)
+            hexagon: str = getattr(response, "hexagon", None)
+
+        if hexagon is None:
+            raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
+
+        if self._safe_mode:
+            hexagon: str = self._format_hexagon(hexagon=hexagon)
+
+        return hexagon
+
     def _calc_death_rate(self, hexagon: str, war_report: dict) -> dict[str, int]:
         war_c: int = war_report.colonialCasualties
         war_w: int = war_report.wardenCasualties
 
-        if self._cpt_rate > self._cpt_rate_total or not self._death_rate_c.get(hexagon):
+        now: float = time.monotonic()
+        start: float = self._death_rate_time.get(hexagon)
+
+        if start is None or now - start > self._rate_period:
             self._death_rate_c[hexagon] = war_c
             self._death_rate_w[hexagon] = war_w
-            self._cpt_rate: int = 0
+            self._death_rate_time[hexagon] = now
 
         return {"colonials": war_c - self._death_rate_c[hexagon], "wardens": war_w - self._death_rate_w[hexagon], "hexagon": hexagon}
 
@@ -243,9 +380,44 @@ class FoxAPI():
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        img_path: str = os.path.join(self._img_dir, "MapsHex", f"Map{hexagon}.png")
+        base: Image = self._base_maps.get(hexagon)
 
-        return Image.open(img_path).convert("RGBA")
+        if base is None:
+            img_path: str = os.path.join(self._img_dir, "MapsHex", f"Map{hexagon}.png")
+
+            with Image.open(img_path) as file:
+                base = file.convert("RGBA")
+
+            self._base_maps[hexagon] = base
+
+        # a copy is returned so the image kept in memory is never modified
+        return base.copy()
+
+    def _get_icon(self, icon, team: str, colored: bool) -> Image:
+        key: tuple = (str(icon), team if colored else None, self._icon_size)
+        img = self._icon_cache.get(key)
+
+        if img is not None:
+            return img
+
+        try:
+            img_path: str = os.path.join(self._img_dir, "MapIcons", f"{icon}.png")
+
+            with Image.open(img_path) as file:
+                img = file.convert("RGBA").resize(self._icon_size)
+
+            if colored:
+                self.color_icon(image=img, team=team)
+
+        except Exception:
+            img_path: str = os.path.join(self._img_dir, "MapIcons", "DebugIcon.png")
+
+            with Image.open(img_path) as file:
+                img = file.convert("RGBA").resize(self._icon_size)
+
+        self._icon_cache[key] = img
+
+        return img
 
     def color_icon(self, image: Image, team: str = None):
         f: int = 50
@@ -253,112 +425,184 @@ class FoxAPI():
 
         if team == "COLONIALS":
             color: tuple = (101-f, 135-f, 94-f)
-        
+
         elif team == "WARDENS":
             color: tuple = (45-f, 108-f, 161-f)
-        
+
         else:
             return
 
-        width, height = image.size
+        # channel by channel with PIL instead of a python loop on every pixel
+        red, green, blue, alpha = image.split()
 
-        pix = image.load()
+        shifted: list = [
+            channel.point(lambda v, c=c: max(0, min(255, v - g + c)))
+            for channel, c in zip((red, green, blue), color)
+        ]
 
-        for x in range(width):
-            for y in range(height):
-                p = pix[x, y]
+        # the alpha channel is kept so the edges of the icon stay smooth
+        colored = Image.merge("RGBA", (*shifted, alpha))
+        visible = alpha.point(lambda v: 255 if v > 10 else 0)
 
-                if p[-1] <= 10:
-                    continue
-                
-                new_color: tuple = (p[0]-g + color[0], p[1]-g + color[1], p[2]-g + color[2])
-                image.putpixel((x, y), new_color)
+        image.paste(colored, (0, 0), visible)
 
+    def _region_labels(self, size: tuple, points: tuple) -> Image:
+        """Image where each pixel holds the index of the closest town (cached, towns never move)"""
+        key: tuple = (size, points)
+        small = self._regions_cache.get(key)
 
-    def color_regions(self, image: Image, dynamic: dict, static: dict):
+        if small is None:
+            width, height = size
+            scale: int = self._REGION_SCALE
+            small_w, small_h = max(1, width // scale), max(1, height // scale)
+
+            towns: list = [(px * width, py * height) for px, py in points]
+            labels: list = []
+
+            for y in range(small_h):
+                cy: float = (y + .5) * height / small_h
+
+                for x in range(small_w):
+                    cx: float = (x + .5) * width / small_w
+
+                    closest: int = 0
+                    min_distance: float = float('inf')
+
+                    for i, (px, py) in enumerate(towns):
+                        distance: float = (cx - px) ** 2 + (cy - py) ** 2
+
+                        if distance < min_distance:
+                            min_distance = distance
+                            closest = i
+
+                    labels.append(closest)
+
+            small = Image.new("L", (small_w, small_h))
+            small.putdata(labels)
+            self._regions_cache[key] = small
+
+        return small.resize(size, Image.NEAREST)
+
+    def color_regions(self, image: Image, dynamic: SDObject, static: SDObject):
         captured_towns: dict = self.get_captured_towns_sync(dynamic=dynamic, static=static)
-        map_info = [data for data in static.mapTextItems if data.mapMarkerType == "Major"]
-        
-        for i in range(len(map_info)):
-            map_info[i].team = captured_towns[map_info[i].text]
+        colors: dict = {"COLONIALS": (50, 66, 47), "WARDENS": (22, 54, 80)}
 
-        points = [(p.x * self.img_width, p.y * self.img_height, p.team) for p in map_info]
-        
-        for y in range(self.img_height):
-            for x in range(self.img_width):
-                current_pixel = image.getpixel((x, y))
-                
-                if current_pixel[3] <= 10:
-                    continue
+        # an "L" image can't hold more than 256 indexes
+        towns: list = [p for p in static.mapTextItems if p.mapMarkerType == "Major"][:256]
 
-                closest_point_index = None
-                min_distance = float('inf')
-                
-                for i, point in enumerate(points):
-                    distance = math.sqrt((x - point[0])**2 + (y - point[1])**2)
-                    
-                    if distance < min_distance:
-                        min_distance = distance
-                        closest_point_index = i
+        if not towns:
+            return
 
-                if points[closest_point_index][2] == "COLONIALS":
-                    color: tuple = (50, 66, 47)
-                
-                elif points[closest_point_index][2] == "WARDENS":
-                    color: tuple = (22, 54, 80)
-                
-                else:
-                    continue
+        labels: Image = self._region_labels(image.size, tuple((p.x, p.y) for p in towns))
 
-                new_color: tuple = (current_pixel[0]//2 + color[0], current_pixel[1]//2 + color[1], current_pixel[2]//2 + color[2])
-                image.putpixel((x, y), new_color)
+        red, green, blue, alpha = image.split()
+        visible: Image = alpha.point(lambda v: 255 if v > 10 else 0)
+        halves: list = [channel.point(lambda v: v // 2) for channel in (red, green, blue)]
+
+        for team, color in colors.items():
+            table: list = [255 if i < len(towns) and captured_towns.get(towns[i].text) == team else 0 for i in range(256)]
+            mask: Image = labels.point(table)
+
+            if mask.getbbox() is None:
+                continue
+
+            mask = ImageChops.multiply(mask, visible)
+
+            colored = Image.merge("RGBA", [
+                *(channel.point(lambda v, c=c: min(255, v + c)) for channel, c in zip(halves, color)),
+                alpha
+            ])
+
+            image.paste(colored, (0, 0), mask)
 
     def add_icons(self, image: Image, icons: str | list, dynamic: SDObject, colored: bool = True):
         icon_size: tuple = self._icon_size
 
-        if isinstance(icons, list):
+        if icons != "all":
+            if isinstance(icons, (str, int)):
+                icons: list = [icons]
+
             icons: list[str] = [str(i) for i in icons]
 
         for data in dynamic.mapItems:
             icon: str = data.iconType
             team: str = data.teamId.strip()
 
-            if icons == "all":
-                pass
-
-            elif str(icon) not in icons:
+            if icons != "all" and str(icon) not in icons:
                 continue
 
-            try:
-                img_path: str = os.path.join(self._img_dir, "MapIcons", f"{icon}.png")
-                img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
+            img2: Image = self._get_icon(icon=icon, team=team, colored=colored)
 
-                if colored:
-                    self.color_icon(image=img2, team=team)
+            # the icon is centered on the position of the item
+            position: tuple = (int(data.x * self.img_width) - icon_size[0] // 2, int(data.y * self.img_height) - icon_size[1] // 2)
+            image.paste(img2, position, mask=img2)
 
-            except Exception as e:
-                img_path: str = os.path.join(self._img_dir, "MapIcons", f"DebugIcon.png")
-                img2 = Image.open(img_path).convert("RGBA").resize(icon_size)
-
-            image.paste(img2, (int(data.x * self.img_width), int(data.y * self.img_height)), mask=img2)
-
-    def associate_towns(self, dynamic: dict, static: dict) -> dict:
+    def associate_towns(self, dynamic: SDObject, static: SDObject) -> dict:
         captured_towns: dict = {}
         icons: list = [45, 46, 47, 56, 57, 58] # Town halls and relics
 
+        bases: list = [d for d in dynamic.mapItems if d.iconType in icons]
+
         for s in static.mapTextItems:
-            deltas: list = []
-            faction: list = []
+            if s.mapMarkerType != 'Major':
+                continue
 
-            if s.mapMarkerType == 'Major':
-                for d in dynamic.mapItems:
-                    if d.iconType in icons:
-                        faction.append(d.teamId)
-                        deltas.append(self.calc_distance((s.x, s.y), (d.x, d.y)))
+            if not bases:
+                captured_towns[s.text] = "NONE"
+                continue
 
-                captured_towns[s.text] = faction[deltas.index(min(deltas))]
+            closest = min(bases, key=lambda d: self.calc_distance((s.x, s.y), (d.x, d.y)))
+            captured_towns[s.text] = closest.teamId
 
         return captured_towns
+
+    def _map_cache_key(self, hexagon: str, icons: str | list, colored: bool) -> tuple:
+        if not icons:
+            icons_key = None
+
+        elif isinstance(icons, (str, int)):
+            icons_key = str(icons)
+
+        else:
+            icons_key = tuple(sorted(str(i) for i in icons))
+
+        return (hexagon, icons_key, bool(colored))
+
+    def _map_stamp(self, dynamic: SDObject = None):
+        # identifies the state of the data used to draw the map
+        if dynamic is None:
+            return "static"
+
+        last_updated = getattr(dynamic, "lastUpdated", None)
+
+        if last_updated is None:
+            return None
+
+        return (last_updated, getattr(dynamic, "version", None))
+
+    def _map_cache_lookup(self, key: tuple, stamp, force: bool = False):
+        if force or stamp is None:
+            return None
+
+        cached = self.cache_img.get(key)
+
+        if cached is not None and cached[0] == stamp:
+            return cached[1].copy()
+
+    def _map_cache_store(self, key: tuple, stamp, image: Image):
+        if stamp is not None:
+            self.cache_img[key] = (stamp, image.copy())
+
+    def _render_map(self, hexagon: str, icons: str | list, colored: bool, dynamic: SDObject, static: SDObject) -> Image:
+        img: Image = self.load_hexagon_map(hexagon)
+
+        if colored:
+            self.color_regions(image=img, dynamic=dynamic, static=static)
+
+        if icons:
+            self.add_icons(image=img, icons=icons, dynamic=dynamic, colored=colored)
+
+        return img
 
     """
     ---------------------------------------- ASYNC METHODS ----------------------------------------
@@ -366,32 +610,35 @@ class FoxAPI():
 
     async def get_maps(self, use_cache: bool = True, session: aiohttp.ClientSession | None = None) -> list[str]:
         data: APIResponse = await self.get_data(endpoint="/maps", use_cache=use_cache, session=session)
-        return data.json
+        return self._json_or_raise(data, "/maps")
 
     async def get_war(self, use_cache: bool = None, session: aiohttp.ClientSession | None = None) -> WarObject:
         data: APIResponse = await self.get_data(endpoint="/war", use_cache=use_cache, session=session)
-        return WarObject(**data.json, response=data)
+        return WarObject(**self._json_or_raise(data, "/war"), response=data)
 
     async def get_static(self, hexagon: str, use_cache: bool = True, session: aiohttp.ClientSession | None = None) -> SDObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache, session=session)
-        return SDObject(**data.json, response=data)
+        endpoint: str = f"/maps/{hexagon}/static"
+        data: APIResponse = await self.get_data(endpoint=endpoint, use_cache=use_cache, session=session)
+        return SDObject(**self._json_or_raise(data, endpoint), response=data)
 
     async def get_dynamic(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession | None = None) -> SDObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache, session=session)
-        return SDObject(**data.json, response=data)
+        endpoint: str = f"/maps/{hexagon}/dynamic/public"
+        data: APIResponse = await self.get_data(endpoint=endpoint, use_cache=use_cache, session=session)
+        return SDObject(**self._json_or_raise(data, endpoint), response=data)
 
     async def get_war_report(self, hexagon: str, use_cache: bool = None, session: aiohttp.ClientSession | None = None) -> WarReportObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = await self.get_data(endpoint=f"/warReport/{hexagon}", use_cache=use_cache, session=session)
-        return WarReportObject(**data.json, response=data)
+        endpoint: str = f"/warReport/{hexagon}"
+        data: APIResponse = await self.get_data(endpoint=endpoint, use_cache=use_cache, session=session)
+        return WarReportObject(**self._json_or_raise(data, endpoint), response=data)
 
     """
     ---------------------------------------- ADDITIONAL ASYNC METHODS ----------------------------------------
@@ -399,8 +646,9 @@ class FoxAPI():
 
     async def get_captured_towns(self, hexagon: str = None, dynamic: SDObject = None, static: SDObject = None, session: aiohttp.ClientSession | None = None) -> dict[str, str]:
         if hexagon is not None and static is None and dynamic is None:
-            static: SDObject = await self.get_static(hexagon, use_cache=True, session=session)
-            dynamic: SDObject = await self.get_dynamic(hexagon, session=session)
+            async with self._session_scope(session) as session:
+                static: SDObject = await self.get_static(hexagon, use_cache=True, session=session)
+                dynamic: SDObject = await self.get_dynamic(hexagon, session=session)
 
         if static is None or dynamic is None:
             raise FoxAPIError("Please pass the required parameters (hexagon or (static and dynamic))")
@@ -408,41 +656,37 @@ class FoxAPI():
         return self.associate_towns(dynamic=dynamic, static=static)
 
     async def make_map_png(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: SDObject = None, static: SDObject = None, force: bool = False, session: aiohttp.ClientSession | None = None):
-        if dynamic is None and (icons or colored):
-            dynamic: SDObject = await self.get_dynamic(hexagon=hexagon, session=session)
-        
-        if static is None and colored:
-            static: SDObject = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
+        if self._safe_mode:
+            hexagon: str = self._format_hexagon(hexagon)
 
-        if dynamic.response.is_cache and not force:
-            img = self.cache_img.get(hexagon)
-            
-            if img:
-                return img
-            
-            return await self.make_map_png(hexagon=hexagon, icons=icons, colored=colored, dynamic=dynamic, static=static, force=True)
+        need_dynamic: bool = bool(icons) or colored
 
-        img1: Image = self.load_hexagon_map(hexagon)
+        async with self._session_scope(session) as session:
+            if dynamic is None and need_dynamic:
+                dynamic: SDObject = await self.get_dynamic(hexagon=hexagon, session=session)
 
-        if colored:
-            self.color_regions(image=img1, dynamic=dynamic, static=static)
+            if static is None and colored:
+                static: SDObject = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
 
-        if icons:
-            self.add_icons(image=img1, icons=icons, dynamic=dynamic, colored=colored)
+        key: tuple = self._map_cache_key(hexagon, icons, colored)
+        stamp = self._map_stamp(dynamic if need_dynamic else None)
 
-        self.cache_img[hexagon] = img1
+        img = self._map_cache_lookup(key, stamp, force)
 
-        return img1
+        if img is not None:
+            return img
+
+        # the drawing is slow, it is done in a thread to keep the event loop free
+        img: Image = await asyncio.to_thread(self._render_map, hexagon, icons, colored, dynamic, static)
+        self._map_cache_store(key, stamp, img)
+
+        return img
 
     async def calculate_death_rate(self, hexagon: str = None, war_report: WarReportObject = None, session: aiohttp.ClientSession | None = None):
-        if self._safe_mode:
-            hexagon: str = self._format_hexagon(hexagon=hexagon)
+        hexagon: str = self._death_rate_hexagon(hexagon=hexagon, war_report=war_report)
 
         if war_report is None:
             war_report: WarReportObject = await self.get_war_report(hexagon, session=session)
-
-        if war_report is None:
-            raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
 
         return self._calc_death_rate(hexagon=hexagon, war_report=war_report)
 
@@ -450,13 +694,14 @@ class FoxAPI():
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
-        war_report: WarReportObject = await self.get_war_report(hexagon=hexagon, use_cache=use_cache, session=session)
-        static: SDObject = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
-        dynamic: SDObject = await self.get_dynamic(hexagon=hexagon, use_cache=use_cache, session=session)
+        async with self._session_scope(session) as session:
+            war_report: WarReportObject = await self.get_war_report(hexagon=hexagon, use_cache=use_cache, session=session)
+            static: SDObject = await self.get_static(hexagon=hexagon, use_cache=True, session=session)
+            dynamic: SDObject = await self.get_dynamic(hexagon=hexagon, use_cache=use_cache, session=session)
 
         captured_towns: dict = await self.get_captured_towns(dynamic=dynamic, static=static, session=session)
         casualty_rate: dict = await self.calculate_death_rate(hexagon=hexagon, war_report=war_report, session=session)
-        
+
         return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
@@ -464,32 +709,36 @@ class FoxAPI():
     """
 
     def get_maps_sync(self, use_cache: bool = True) -> list[str]:
-        return self.get_data_sync(endpoint="/maps", use_cache=use_cache).json
+        data: APIResponse = self.get_data_sync(endpoint="/maps", use_cache=use_cache)
+        return self._json_or_raise(data, "/maps")
 
     def get_war_sync(self, use_cache: bool = None) -> WarObject:
         data: APIResponse = self.get_data_sync(endpoint="/war", use_cache=use_cache)
-        return WarObject(**data.json, response=data)
+        return WarObject(**self._json_or_raise(data, "/war"), response=data)
 
     def get_static_sync(self, hexagon: str, use_cache: bool = True) -> SDObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = self.get_data_sync(endpoint=f"/maps/{hexagon}/static", use_cache=use_cache)
-        return SDObject(**data.json, response=data)
+        endpoint: str = f"/maps/{hexagon}/static"
+        data: APIResponse = self.get_data_sync(endpoint=endpoint, use_cache=use_cache)
+        return SDObject(**self._json_or_raise(data, endpoint), response=data)
 
     def get_dynamic_sync(self, hexagon: str, use_cache: bool = None) -> SDObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = self.get_data_sync(endpoint=f"/maps/{hexagon}/dynamic/public", use_cache=use_cache)
-        return SDObject(**data.json, response=data)
+        endpoint: str = f"/maps/{hexagon}/dynamic/public"
+        data: APIResponse = self.get_data_sync(endpoint=endpoint, use_cache=use_cache)
+        return SDObject(**self._json_or_raise(data, endpoint), response=data)
 
     def get_war_report_sync(self, hexagon: str, use_cache: bool = None) -> WarReportObject:
         if self._safe_mode:
             hexagon: str = self._format_hexagon(hexagon)
 
-        data: APIResponse = self.get_data_sync(endpoint=f"/warReport/{hexagon}", use_cache=use_cache)
-        return WarReportObject(**data.json, response=data)
+        endpoint: str = f"/warReport/{hexagon}"
+        data: APIResponse = self.get_data_sync(endpoint=endpoint, use_cache=use_cache)
+        return WarReportObject(**self._json_or_raise(data, endpoint), response=data)
 
     """
     ---------------------------------------- ADDITIONAL SYNC METHODS ----------------------------------------
@@ -505,42 +754,36 @@ class FoxAPI():
 
         return self.associate_towns(dynamic=dynamic, static=static)
 
-    def make_map_png_sync(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: dict = None, static: dict = None, force: bool = False):
-        if dynamic is None and (icons or colored):
-            dynamic: dict = self.get_dynamic_sync(hexagon=hexagon)
-        
-        if static is None and colored:
-            static: dict = self.get_static_sync(hexagon=hexagon, use_cache=True)
-
-        img1: Image = self.load_hexagon_map(hexagon)
-        
-        if dynamic.response.is_cache and not force:
-            img = self.cache_img.get(hexagon)
-
-            if img:
-                return img
-
-            return self.make_map_png_sync(hexagon=hexagon, icons=icons, colored=colored, dynamic=dynamic, static=static, force=True)
-
-        if colored:
-            self.color_regions(image=img1, dynamic=dynamic, static=static)
-
-        if icons:
-            self.add_icons(image=img1, icons=icons, dynamic=dynamic, colored=colored)
-
-        self.cache_img[hexagon] = img1
-
-        return img1
-
-    def calculate_death_rate_sync(self, hexagon: str = None, war_report: dict = None):
+    def make_map_png_sync(self, hexagon: str, icons: str | list[int | str] = "all", colored: bool = False, dynamic: SDObject = None, static: SDObject = None, force: bool = False):
         if self._safe_mode:
-            hexagon: str = self._format_hexagon(hexagon=hexagon)
+            hexagon: str = self._format_hexagon(hexagon)
+
+        need_dynamic: bool = bool(icons) or colored
+
+        if dynamic is None and need_dynamic:
+            dynamic: SDObject = self.get_dynamic_sync(hexagon=hexagon)
+
+        if static is None and colored:
+            static: SDObject = self.get_static_sync(hexagon=hexagon, use_cache=True)
+
+        key: tuple = self._map_cache_key(hexagon, icons, colored)
+        stamp = self._map_stamp(dynamic if need_dynamic else None)
+
+        img = self._map_cache_lookup(key, stamp, force)
+
+        if img is not None:
+            return img
+
+        img: Image = self._render_map(hexagon, icons, colored, dynamic, static)
+        self._map_cache_store(key, stamp, img)
+
+        return img
+
+    def calculate_death_rate_sync(self, hexagon: str = None, war_report: WarReportObject = None):
+        hexagon: str = self._death_rate_hexagon(hexagon=hexagon, war_report=war_report)
 
         if war_report is None:
-            war_report: dict = self.get_war_report_sync(hexagon)
-
-        if war_report is None:
-            raise FoxAPIError("Please pass the required parameters (hexagon or war_report)")
+            war_report: WarReportObject = self.get_war_report_sync(hexagon)
 
         return self._calc_death_rate(hexagon=hexagon, war_report=war_report)
 
@@ -549,7 +792,7 @@ class FoxAPI():
             hexagon: str = self._format_hexagon(hexagon=hexagon)
 
         war_report: WarReportObject = self.get_war_report_sync(hexagon=hexagon, use_cache=use_cache)
-        static: SDObject = self.get_static_sync(hexagon=hexagon, use_cache=use_cache)
+        static: SDObject = self.get_static_sync(hexagon=hexagon, use_cache=True)
         dynamic: SDObject = self.get_dynamic_sync(hexagon=hexagon, use_cache=use_cache)
 
         captured_towns: dict = self.get_captured_towns_sync(dynamic=dynamic, static=static)
@@ -558,59 +801,251 @@ class FoxAPI():
         return HexagonObject(hexagon=hexagon, war_report=war_report, static=static, dynamic=dynamic, captured_towns=captured_towns, casualty_rate=casualty_rate)
 
     """
-    ---------------------------------------- CRAWLER ASYNC ----------------------------------------
+    ---------------------------------------- CRAWLER ----------------------------------------
     """
 
-    async def _listener(self):
-        await asyncio.sleep(.1)
+    def _uses_legacy_kwargs(self, callback: callable, answer) -> bool:
+        """
+        FoxAPI 2.x called the async callbacks of on_api_update with callback(**data).
+        Those callbacks (async def f(**data) or async def f(warId, warNumber, ...)) keep working.
+        """
+        if not isinstance(answer, dict):
+            return False
 
-        while self._run:
-            for url, callback in self._to_call.items():
-                data = self.get_data_sync(endpoint=url)
+        key = getattr(callback, "__func__", callback)
+        legacy = self._legacy_callbacks.get(key)
 
-                if data.is_cache == False:
-                    answer: dict = data.json
+        if legacy is not None:
+            return legacy
 
-                    if url in self._hex_call:
-                        answer: HexagonObject = self.get_hexagon_data_sync(hexagon=data.hexagon, use_cache=True)
+        legacy = False
 
-                    self.waiting_list.append([callback, answer])
+        try:
+            signature = inspect.signature(callback)
 
-            await self.run_task()
-            self._cpt_rate += 1
-            await asyncio.sleep(self._refresh)
+        except (TypeError, ValueError):
+            signature = None
 
-    """
-    ---------------------------------------- CRAWLER SYNC ----------------------------------------
-    """
+        if signature is not None:
+            positional: list = [
+                p for p in signature.parameters.values()
+                if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            ]
+
+            var_positional: bool = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in signature.parameters.values())
+
+            # one argument : the new way, unless this argument is one of the keys of the data
+            try:
+                if positional and positional[0].name in answer:
+                    raise TypeError
+
+                if not positional and not var_positional:
+                    raise TypeError
+
+                signature.bind(answer)
+
+            except TypeError:
+                try:
+                    signature.bind(**answer)
+                    legacy = True
+
+                except TypeError:
+                    pass
+
+        if legacy:
+            logger.warning(
+                "FoxAPI: the callback %s receives the data as keyword arguments (FoxAPI 2.x style), "
+                "this is deprecated : use one argument, e.g. 'async def %s(data)'",
+                getattr(callback, "__name__", callback), getattr(callback, "__name__", "callback")
+            )
+
+        self._legacy_callbacks[key] = legacy
+
+        return legacy
+
+    def _dispatch(self, callback: callable, answer):
+        # sync callbacks are called directly, async ones are sent to the background loop
+        try:
+            if self._uses_legacy_kwargs(callback, answer):
+                call = lambda: callback(**answer)
+
+            else:
+                call = lambda: callback(answer)
+
+            if asyncio.iscoroutinefunction(callback):
+                future = asyncio.run_coroutine_threadsafe(call(), self._get_bg_loop())
+                future.add_done_callback(lambda f, cb=callback: self._callback_done(f, cb))
+
+            else:
+                call()
+
+        except Exception:
+            logger.exception("FoxAPI: error in the callback %s", getattr(callback, "__name__", callback))
+
+    def _callback_done(self, future, callback: callable):
+        if future.cancelled():
+            return
+
+        error = future.exception()
+
+        if error is not None:
+            logger.error("FoxAPI: error in the callback %s", getattr(callback, "__name__", callback), exc_info=error)
+
+    def _listener_session(self) -> requests.Session:
+        # one session per worker thread : a requests.Session is not made to be shared between threads
+        session: requests.Session = getattr(self._local, "session", None)
+
+        if session is None:
+            session = self._local.session = requests.Session()
+
+            with self._lock:
+                self._listener_sessions.append(session)
+
+        return session
+
+    def _poll(self, session: requests.Session = None, executor: ThreadPoolExecutor = None) -> float:
+        """One check of every listened endpoint, returns the time to wait if the server asks to slow down"""
+        with self._lock:
+            api_calls: dict = {endpoint: list(callbacks) for endpoint, callbacks in self._to_call.items()}
+            hex_calls: dict = {hexagon: list(callbacks) for hexagon, callbacks in self._hex_to_call.items()}
+
+        # every endpoint is requested only once per cycle
+        endpoints: list = list(api_calls)
+
+        for hexagon in hex_calls:
+            for endpoint in self._hexagon_endpoints(hexagon):
+                if endpoint not in api_calls:
+                    endpoints.append(endpoint)
+
+        updated: dict = {}
+        backoff: float = None
+        slow_down: threading.Event = threading.Event()
+
+        def fetch(endpoint: str):
+            # nothing more is requested once the server asked to slow down
+            if not self._run or slow_down.is_set():
+                return endpoint, None
+
+            try:
+                # own sessions and own etags : the listener never shares its state with the user's calls
+                session: requests.Session = self._listener_session() if executor is not None else own_session
+                data: APIResponse = self._fetch_sync(endpoint=endpoint, session=session, etags=self._listener_etag)
+
+            except Exception:
+                logger.exception("FoxAPI: the request to %s failed", endpoint)
+                return endpoint, None
+
+            if data.status_code in (429, 503):
+                slow_down.set()
+
+            return endpoint, data
+
+        if executor is not None:
+            # several requests at the same time (max self._workers)
+            results = executor.map(fetch, endpoints)
+
+        else:
+            own_session: requests.Session = session or requests.Session()
+            results = map(fetch, endpoints)
+
+        for endpoint, data in results:
+            if data is None:
+                continue
+
+            if data.status_code in (429, 503):
+                delay: float = self._retry_after(data.headers)
+                backoff = max(backoff or 0, delay)
+                logger.warning("FoxAPI: %s answered %s, next check in %.0f s", endpoint, data.status_code, delay)
+                continue
+
+            if data.status_code == 200 and not data.is_cache:
+                if self._listener_seen.get(endpoint) == data.json:
+                    continue
+
+                self._listener_seen[endpoint] = data.json
+                updated[endpoint] = data
+
+        for endpoint, callbacks in api_calls.items():
+            if endpoint in updated:
+                for callback in callbacks:
+                    self._dispatch(callback, updated[endpoint].json)
+
+        # one call per updated hexagon, even if several of its endpoints changed
+        for hexagon, callbacks in hex_calls.items():
+            if not self._run:
+                return None
+
+            if not any(endpoint in updated for endpoint in self._hexagon_endpoints(hexagon)):
+                continue
+
+            try:
+                answer: HexagonObject = self.get_hexagon_data_sync(hexagon=hexagon, use_cache=True)
+
+            except Exception:
+                logger.exception("FoxAPI: unable to build the data of the hexagon %s", hexagon)
+                continue
+
+            for callback in callbacks:
+                self._dispatch(callback, answer)
+
+        return backoff
 
     def _listener_sync(self):
+        # lets the time to register every callback before the first cycle
         time.sleep(.1)
 
-        while self._run:
-            for url, callback in self._to_call.items():
-                data: int = self.get_data_sync(endpoint=url)
+        executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=self._workers, thread_name_prefix="FoxAPI-request")
 
-                if data.is_cache == False:
-                    answer: dict = data.json
+        try:
+            while self._run:
+                self._wake.clear()
+                start: float = time.monotonic()
 
-                    if url in self._hex_call:
-                        answer: HexagonObject = self.get_hexagon_data_sync(hexagon=data.hexagon, use_cache=True)
+                try:
+                    backoff: float = self._poll(executor=executor)
 
-                    callback(answer)
+                except Exception:
+                    logger.exception("FoxAPI: error in the listener")
+                    backoff = None
 
-            self._cpt_rate += 1
-            time.sleep(self._refresh)
+                # fixed interval between the start of two cycles, whatever the time taken by the requests
+                delay: float = max(0.0, self._refresh - (time.monotonic() - start))
 
-    def _check_listener(self, run_async: bool = True):
-        if not self._run:
+                if backoff:
+                    delay = max(delay, backoff)
+
+                self._wake.wait(delay)
+
+        finally:
+            executor.shutdown(wait=True)
+
+            with self._lock:
+                sessions, self._listener_sessions = self._listener_sessions, []
+
+            for session in sessions:
+                session.close()
+
+    def _check_listener(self):
+        with self._lock:
+            if self._run and self._listener_thread is not None and self._listener_thread.is_alive():
+                # new callbacks are taken into account without waiting the next cycle
+                self._wake.set()
+                return
+
             self._run: bool = True
-            # threading.Thread(target=self._listener).start()
-            if run_async:
-                self.start_async_thread(self._listener())
-            else:
-                threading.Thread(target=self._listener_sync).start()
-            # threading.Thread(target=self.start_async_thread).start()
+            self._wake.clear()
+            self._listener_thread = threading.Thread(target=self._listener_sync, name="FoxAPI-listener")
+            self._listener_thread.start()
+
+    def stop_listener(self):
+        """Stops the listener started by on_api_update / on_hexagon_update"""
+        self._run: bool = False
+        self._wake.set()
+
+        loop, self._bg_loop = self._bg_loop, None
+
+        if loop is not None:
+            self.stop_async_thread(loop)
 
     """
     ---------------------------------------- ASYNC TOOLS ----------------------------------------
@@ -622,8 +1057,12 @@ class FoxAPI():
         tasks: list = []
         answers: list = []
 
-        for function, args in self.waiting_list:
-            if args == "no_args":
+        # the list is emptied first, so a failing task is not executed again
+        waiting_list: list = self.waiting_list
+        self.waiting_list: list = []
+
+        for function, args in waiting_list:
+            if isinstance(args, str) and args == "no_args":
                 tasks.append([asyncio.create_task(function()), function, args])
 
             elif isinstance(args, list):
@@ -638,10 +1077,6 @@ class FoxAPI():
         for task, function, args in tasks:
             answers.append(Task(function=function, args=args, result=await task))
 
-        tasks.clear()
-        self.waiting_list.clear()
-        self.waiting_list: list = []
-
         return answers
 
     def run_task_sync(self, thread: bool = False):
@@ -653,6 +1088,13 @@ class FoxAPI():
     def _exec(self):
         return asyncio.run(self.run_task())
 
+    def _get_bg_loop(self):
+        with self._lock:
+            if self._bg_loop is None or self._bg_loop.is_closed():
+                self._bg_loop = self.create_bg_loop()
+
+            return self._bg_loop
+
     # https://gist.github.com/ultrafunkamsterdam/8be3d55ac45759aa1bd843ab64ce876d#file-python-3-6-asyncio-multiple-async-event-loops-in-multiple-threads-running-and-shutting-down-gracefully-py-L15
     def create_bg_loop(self):
         def to_bg(loop):
@@ -661,31 +1103,25 @@ class FoxAPI():
             try:
                 loop.run_forever()
 
-            except asyncio.CancelledError as e:
-                print('CANCELLEDERROR {}'.format(e))
-
             finally:
-                for task in asyncio.Task.all_tasks():
+                tasks = asyncio.all_tasks(loop)
+
+                for task in tasks:
                     task.cancel()
 
+                if tasks:
+                    loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+
                 loop.run_until_complete(loop.shutdown_asyncgens())
-                loop.stop()
                 loop.close()
 
         new_loop = asyncio.new_event_loop()
-        t = threading.Thread(target=to_bg, args=(new_loop,))
+        t = threading.Thread(target=to_bg, args=(new_loop,), name="FoxAPI-loop", daemon=True)
         t.start()
 
         return new_loop
 
     def start_async_thread(self, awaitable):
-        # old
-        """
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        threading.Thread(target=loop.run_forever).start()
-        """
-        # new
         loop = self.create_bg_loop()
 
         coro = asyncio.run_coroutine_threadsafe(awaitable, loop)
@@ -698,16 +1134,35 @@ class FoxAPI():
      ----------------------------------------EVENT WRAPPER ----------------------------------------
     """
 
+    def _register(self, registry: dict, keys: list, func: callable):
+        # several callbacks can listen to the same endpoint / hexagon
+        with self._lock:
+            for key in keys:
+                callbacks: list = registry.setdefault(key, [])
+
+                if func not in callbacks:
+                    callbacks.append(func)
+
+        self._check_listener()
+
+        return func
+
     def on_api_update(self, callback: callable = None, endpoints: list = None):
-        if (isinstance(callback, str) or isinstance(callback, list)) and endpoints is None:
+        if isinstance(callback, (str, list, tuple)) and endpoints is None:
             endpoints: list = callback
             callback: callable = None
 
-        if endpoints == "all" or endpoints == ["all"]:
-            endpoints: list = self._valid_endpoints
+        if endpoints is None:
+            raise EndpointError("Please enter the endpoints to listen (FoxAPI._valid_endpoints or 'all')")
+
+        if endpoints == "all" or list(endpoints) == ["all"]:
+            endpoints: list = list(self._valid_endpoints)
 
         elif isinstance(endpoints, str):
             endpoints: list = [endpoints]
+
+        else:
+            endpoints: list = list(endpoints)
 
         if self._safe_mode:
             for i in range(len(endpoints)):
@@ -718,12 +1173,7 @@ class FoxAPI():
                 raise EndpointError(f"{endpoints[i]} not valid! Please enter a valid endpoint (FoxAPI._valid_endpoints)")
 
         def add_debug(func):
-            self._check_listener(asyncio.iscoroutinefunction(func))
-
-            for endpoint in endpoints:
-                self._to_call[endpoint] = func
-
-            return func
+            return self._register(self._to_call, endpoints, func)
 
         if callable(callback):
             return add_debug(callback)
@@ -731,34 +1181,28 @@ class FoxAPI():
         return add_debug
 
     def on_hexagon_update(self, callback: callable = None, hexagons: list = "all"):
-        if (isinstance(callback, str) or isinstance(callback, list)) and hexagons is None:
+        if isinstance(callback, (str, list, tuple)):
             hexagons: str = callback
             callback: callable = None
 
-        if hexagons == "all" or hexagons == ["all"]:
-            hexagons: list = self.available_hexagons
+        if hexagons is None or hexagons == "all" or list(hexagons) == ["all"]:
+            hexagons: list = list(self.available_hexagons)
 
-        if isinstance(hexagons, str):
+        elif isinstance(hexagons, str):
             hexagons: list = [hexagons]
 
-        if self._safe_mode:
-            for i in range(len(hexagons)):
+        else:
+            hexagons: list = list(hexagons)
+
+        for i in range(len(hexagons)):
+            if self._safe_mode:
                 hexagons[i] = self._format_hexagon(hexagons[i])
 
-                if not self._is_valid_hexagon(hexagons[i]):
-                    raise HexagonError("Please enter a valid hexagon (FoxAPi.available_hexagons")
+            if not self._is_valid_hexagon(hexagons[i]):
+                raise HexagonError(f"'{hexagons[i]}' is not a valid hexagon (FoxAPI.available_hexagons)")
 
         def add_debug(func):
-            self._check_listener(asyncio.iscoroutinefunction(func))
-
-            for hexagon in hexagons:
-                ends: list = [f"/warReport/{hexagon}", f"/maps/{hexagon}/dynamic/public", f"/maps/{hexagon}/static"]
-
-                for hexa in ends:
-                    self._to_call[hexa] = func
-                    self._hex_call.append(hexa)
-
-            return func
+            return self._register(self._hex_to_call, hexagons, func)
 
         if callable(callback):
             return add_debug(callback)
